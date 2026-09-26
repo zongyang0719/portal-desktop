@@ -107,7 +107,7 @@ select::picker-icon{content:"";flex:0 0 6px;width:6px;height:6px;margin:0 2px 3p
 select:open::picker-icon{rotate:225deg;margin-top:4px;margin-bottom:0}
 select::picker(select){margin-block:6px;min-width:anchor-size(width);max-width:min(320px,calc(100vw - 24px));max-height:min(320px,calc(100dvh - 24px));overflow:auto;overscroll-behavior:contain;padding:5px;border:1px solid var(--line);border-radius:12px;background:var(--control);color:var(--text);box-shadow:0 12px 36px #15251b24,0 2px 8px #15251b12;font:inherit;font-size:12px}
 select option{display:flex;align-items:center;gap:12px;min-height:34px;padding:7px 10px;border-radius:7px;line-height:20px;white-space:normal;overflow-wrap:anywhere;cursor:pointer}
-select option:checked{background:var(--selected);color:var(--text);font-weight:550}
+select option:checked{background:var(--selected);color:var(--text);font-weight:500}
 select option:hover,select option:focus-visible{background:var(--hover);outline:none}
 select option::checkmark{order:1;margin-inline-start:auto;color:var(--accent)}
 .field-help{font-size:11px;color:var(--muted);line-height:1.8;margin:7px 0}.picker{display:flex;gap:8px}.picker button{border:1px solid var(--line);border-radius:8px;font-size:12px;white-space:nowrap;padding:0 14px}
