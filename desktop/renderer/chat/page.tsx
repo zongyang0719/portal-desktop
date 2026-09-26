@@ -441,10 +441,6 @@ function ChatView({
                   chat
                   onPlace={item.role === "system" || !keywordNavigation ? undefined : openPlace}
                 />
-                {item.queued && <div className="local-queue-status" role="status">
-                  {item.queueNotice || "排队中 · 等待其他场景完成，尚未发送"}
-                  <button type="button" onClick={() => item.cancelQueued?.()}>取消排队</button>
-                </div>}
                 {item.retry && (
                   <button
                     className="retry-btn"
