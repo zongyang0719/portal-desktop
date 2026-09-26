@@ -1,0 +1,47 @@
+/* Preview chrome and mock conversation only. Sidebar styling comes from the app. */
+body { flex-direction: column; }
+.demo-toolbar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 16px;
+  flex-shrink: 0; min-height: 48px; padding: 8px 20px;
+  border-bottom: 1px solid var(--line); background: var(--surface);
+  color: var(--secondary); font-size: 12px;
+}
+.demo-toolbar strong { margin-right: 8px; color: var(--text); font-weight: 550; }
+.demo-toolbar strong span { margin-left: 6px; color: var(--muted); font-weight: 400; }
+.demo-toolbar label { display: flex; align-items: center; gap: 8px; }
+.demo-toolbar select, .demo-toolbar button {
+  padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--text); font: inherit;
+}
+.demo-toolbar select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.demo-local-note { margin-left: auto; color: var(--muted); }
+#client-main { min-height: 0; }
+.demo-connection { color: var(--muted); font-size: 11px; }
+.demo-traffic-lights { position:absolute;z-index:90;top:20px;left:18px;display:flex;gap:8px;pointer-events:none; }
+.demo-traffic-lights i { width:12px;height:12px;border-radius:50%;background:#ff5f57;box-shadow:inset 0 0 0 1px #00000012; }
+.demo-traffic-lights i:nth-child(2) { background:#febc2e; }
+.demo-traffic-lights i:nth-child(3) { background:#28c840; }
+.demo-conversation { display: flex; flex-direction: column; overflow: auto; }
+.demo-reading { width: min(100%, 660px); margin: auto; padding: 56px 36px; }
+.demo-eyebrow { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.demo-reading h1 { font-size: 25px; font-weight: 500; margin-bottom: 42px; overflow-wrap: anywhere; }
+.demo-message { margin: 26px 0; font-size: 15px; line-height: 1.9; }
+.demo-message-human { margin-left: auto; width: fit-content; padding: 12px 18px; border-radius: 16px; background: var(--surface); }
+.demo-footnote { margin: 0; padding: 24px; text-align: center; color: var(--muted); font-size: 11px; }
+.demo-notice { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 1100; margin: 0; padding: 8px 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--control); font-size: 12px; }
+.demo-inspector { flex:0 0 260px;min-width:0;border-left:1px solid var(--line);background:var(--bg);text-align:left; }
+.demo-inspector header { height:52px;display:flex;align-items:center;padding:0 20px;font-size:12px;color:var(--secondary); }
+.demo-inspector>div { padding:24px 20px;font-size:12px;line-height:1.7; }
+.demo-inspector .demo-eyebrow { margin:24px 0 8px; }
+.demo-window-buttons { position:absolute;top:0;right:0;z-index:100;height:52px;display:flex;pointer-events:none;color:var(--secondary); }
+.demo-window-buttons i { display:grid;place-items:center;width:46px;font-style:normal;font-size:16px; }
+html[data-platform=win32] { --window-control-inset:138px; }
+html[data-platform=win32] .demo-inspector { padding-top:52px; }
+html[data-platform=win32] .workspace-body:has(>.demo-inspector)>.workspace-stage>.topbar { padding-right:24px; }
+@media(max-width:760px){.demo-inspector{flex-basis:220px}}
+
+/* Transcript activity keeps its production styles and local color tokens. */
+.demo-reading{--text-dim:var(--secondary);--text-muted:var(--muted);--border:var(--line);--red:var(--danger,#b34b43)}
+.demo-reading .run-activity{margin-top:20px}
+.demo-queued{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--secondary)}
+.demo-queued .chat-session-status-icon{width:14px;height:14px;stroke-width:1.75}
