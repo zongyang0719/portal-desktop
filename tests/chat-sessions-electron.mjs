@@ -249,11 +249,11 @@ try {
   await page.getByRole('button',{name:'切换到场景：桌面·测试设备'}).click();
   await chat.locator('#input .cm-content').waitFor();
   await page.waitForFunction(() => document.querySelector('.chat-scene-label')?.textContent.includes('桌面·测试设备'));
-  assert.equal(await chat.locator('#input .cm-content').inputValue(),'原会话草稿');
+  assert.equal(await chat.locator('#input .cm-content').textContent(),'原会话草稿');
   assert.equal(await chat.locator('#messages').getByText('回复：方案内容',{exact:true}).count(),0);
   await page.getByRole('button',{name:'切换到场景：方案讨论'}).click();
   await chat.locator('#messages').getByText('回复：方案内容',{exact:true}).waitFor();
-  assert.equal(await chat.locator('#input .cm-content').inputValue(),'方案草稿');
+  assert.equal(await chat.locator('#input .cm-content').textContent(),'方案草稿');
   await page.getByRole('button',{name:'切换到场景：方案讨论'}).click({button:'right'});
   await page.getByRole('menuitem',{name:'重命名',exact:true}).click();
   await page.getByRole('textbox',{name:'场景名称'}).fill('技术方案');
