@@ -14,7 +14,7 @@ npm run test:sidebar-interactions # 拖拽、调宽、键盘、菜单和失败�
 npm run test:sidebar-list # 行内改名、输入法、多选、批量操作和原子恢复
 ```
 
-`sidebar.html` 是随分支提供的构建产物，请勿手改；提交相关组件变化时一并重新构建。浏览器检查需要本机安装 Google Chrome。
+`sidebar.html` 是本地生成的预览文件，不提交到 Git。首次使用或修改相关组件后运行 `npm run build:demo`，请勿手改 HTML。浏览器检查需要本机安装 Google Chrome。
 
 预览包含真实组件的 hover peek：收起后，将鼠标停在窗口内左缘 8px 区域 300ms；离开 300ms 后收起，Escape 立即关闭，顶部按钮固定面板。参数依据见 `docs/SIDEBAR-INTERACTION-2026-09-25.md`。Web 模式不绘制红黄绿灯；macOS 示意模式用装饰圆点展示控制带布局。真实红黄绿灯由 Electron/macOS 绘制，纯 Web 入口不能验证其原生实际对齐。
 
