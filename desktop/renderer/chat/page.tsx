@@ -99,11 +99,14 @@ function ChatView({
   const messageElements = useRef(new Map<string, HTMLDivElement>()),
     index = useRef<ChatIndexHandle>(null),
     scrollLock = useRef(true),
-    replyAnchor = useRef<string | null>(null);
+    replyAnchor = useRef<string | null>(null),
+    streamingReplySeen = useRef<string | null>(null),
+    anchorNextReply = useRef(true);
   const scopeScroll = useRef<Partial<Record<HistoryScope, { top: number; locked: boolean }>>>({});
   function sendDraft() {
     replyAnchor.current = null;
     scrollLock.current = true;
+    anchorNextReply.current = true;
     void runtime.send(state.draft);
   }
   function changeScope(scope: HistoryScope) {
@@ -221,7 +224,13 @@ function ChatView({
         item.kind === "message" && item.role === "being" && item.streaming,
     );
     const container = messages.current;
-    if (streamingReply && replyAnchor.current !== streamingReply.id && container) {
+    let shouldAnchorReply = false;
+    if (streamingReply && streamingReplySeen.current !== streamingReply.id) {
+      streamingReplySeen.current = streamingReply.id;
+      shouldAnchorReply = anchorNextReply.current && scrollLock.current;
+      anchorNextReply.current = false;
+    }
+    if (streamingReply && shouldAnchorReply && container) {
       const reply = messageElements.current.get(streamingReply.id);
       if (reply) {
         replyAnchor.current = streamingReply.id;
@@ -230,6 +239,15 @@ function ChatView({
           reply.getBoundingClientRect().top -
           container.getBoundingClientRect().top -
           20;
+        return;
+      }
+    }
+    if (!streamingReply && replyAnchor.current && container) {
+      const reply = messageElements.current.get(replyAnchor.current);
+      if (reply && reply.getBoundingClientRect().height < container.clientHeight - 40) {
+        replyAnchor.current = null;
+        scrollLock.current = true;
+        container.scrollTop = container.scrollHeight;
         return;
       }
     }
@@ -427,7 +445,19 @@ function ChatView({
           }}
           onScroll={() => {
             const el = messages.current!;
-            if (replyAnchor.current) return;
+            if (replyAnchor.current) {
+              const reply = messageElements.current.get(replyAnchor.current);
+              if (
+                reply &&
+                Math.abs(
+                  reply.getBoundingClientRect().top -
+                    el.getBoundingClientRect().top -
+                    20,
+                ) <= 2
+              )
+                return;
+              replyAnchor.current = null;
+            }
             scrollLock.current =
               el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
             setSelection(null);
