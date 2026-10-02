@@ -102,11 +102,17 @@ function ChatView({
     index = useRef<ChatIndexHandle>(null),
     scrollLock = useRef(true),
     replyAnchor = useRef<string | null>(null),
+    anchorPadding = useRef(""),
     streamingReplySeen = useRef<string | null>(null),
     anchorNextReply = useRef(true);
   const scopeScroll = useRef<Partial<Record<HistoryScope, { top: number; locked: boolean }>>>({});
-  function sendDraft() {
+  function clearReplyAnchor() {
+    if (!replyAnchor.current) return;
     replyAnchor.current = null;
+    if (messages.current) messages.current.style.paddingBottom = anchorPadding.current;
+  }
+  function sendDraft() {
+    clearReplyAnchor();
     scrollLock.current = true;
     anchorNextReply.current = true;
     void runtime.send(state.draft);
@@ -114,7 +120,7 @@ function ChatView({
   function changeScope(scope: HistoryScope) {
     if (scope === state.historyScope || (scope === "current" && !state.currentScene.sceneId)) return;
     if (messages.current) scopeScroll.current[state.historyScope] = { top: messages.current.scrollTop, locked: scrollLock.current };
-    replyAnchor.current = null;
+    clearReplyAnchor();
     state.historyScope = scope;
     setSelection(null);
     setHighlighted(null);
@@ -212,15 +218,18 @@ function ChatView({
   }, []);
   useLayoutEffect(() => {
     scrollLock.current = true;
-    replyAnchor.current = null;
+    clearReplyAnchor();
   }, [state.resetScroll]);
   useLayoutEffect(() => {
     const saved = scopeScroll.current[state.historyScope];
-    replyAnchor.current = null;
+    clearReplyAnchor();
     scrollLock.current = saved?.locked ?? true;
     if (messages.current && saved) messages.current.scrollTop = saved.top;
   }, [state.historyScope]);
   useLayoutEffect(() => {
+    if (replyAnchor.current && !visibleItems.some(
+      item => item.kind === "message" && item.id === replyAnchor.current && item.streaming,
+    )) clearReplyAnchor();
     const streamingReply = visibleItems.find(
       (item): item is Message =>
         item.kind === "message" && item.role === "being" && item.streaming,
@@ -235,6 +244,8 @@ function ChatView({
     if (streamingReply && shouldAnchorReply && container) {
       const reply = messageElements.current.get(streamingReply.id);
       if (reply) {
+        anchorPadding.current = container.style.paddingBottom;
+        container.style.paddingBottom = `${parseFloat(getComputedStyle(container).paddingBottom) + container.clientHeight}px`;
         replyAnchor.current = streamingReply.id;
         scrollLock.current = false;
         container.scrollTop +=
@@ -427,18 +438,22 @@ function ChatView({
           id="messages"
           ref={messages}
           onWheel={(event) => {
-            if (event.deltaY) replyAnchor.current = null;
+            if (event.deltaY) clearReplyAnchor();
             if (event.deltaY < 0) scrollLock.current = false;
           }}
           onTouchMove={() => {
-            replyAnchor.current = null;
+            clearReplyAnchor();
           }}
           onPointerDown={(event) => {
-            if (event.target === event.currentTarget) replyAnchor.current = null;
+            if (event.target === event.currentTarget) clearReplyAnchor();
           }}
           onScroll={() => {
             const el = messages.current!;
-            if (replyAnchor.current) return;
+            if (replyAnchor.current) {
+              const reply = messageElements.current.get(replyAnchor.current);
+              if (reply && Math.abs(reply.getBoundingClientRect().top - el.getBoundingClientRect().top - 20) <= 3) return;
+              clearReplyAnchor();
+            }
             scrollLock.current =
               el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
             setSelection(null);
