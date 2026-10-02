@@ -1,4 +1,5 @@
 import { createSceneRuntime } from "./scene-runtime";
+import { withDraftReferences, setDraftReferences, referenceSignature } from "../models/references";
 import { HistoryCache } from "./history-cache";
 import { inCurrentScene, messageScene, sceneTransitionNotice, stripSceneTransition } from "../models/scenes";
 
@@ -941,13 +942,14 @@ function createStreamRuntime(state, options) {
       await Promise.allSettled([...pendingFileReads]);
   }
   async function prepareSend(filesOverride, snapshot = null) {
-    if (Array.isArray(filesOverride) || !pendingFileReads.size) return true;
+    if (Array.isArray(filesOverride) || (!pendingFileReads.size && !snapshot)) return true;
     const draftBeforeRead = snapshot?.draft ?? state.draft;
     const filesBeforeRead = snapshot?.files ?? [...pendingFiles];
+    const referencesBeforeRead = snapshot?.references ?? referenceSignature(state);
     await waitForPendingFiles();
-    if (state.draft !== draftBeforeRead || pendingFiles.length !== filesBeforeRead.length ||
+    if (state.draft !== draftBeforeRead || referenceSignature(state) !== referencesBeforeRead || pendingFiles.length !== filesBeforeRead.length ||
         filesBeforeRead.some((file, index) => pendingFiles[index] !== file)) {
-      addMessage("system", "草稿或附件已变更，请确认后重新发送。");
+      addMessage("system", "草稿、引用或附件已变更，请确认后重新发送。");
       return false;
     }
     return true;
@@ -964,6 +966,7 @@ function createStreamRuntime(state, options) {
   // ---- Send ----
   function clearComposer() {
     state.draft = "";
+    setDraftReferences(state, []);
     pendingFiles = [];
     renderPendingFiles();
   }
@@ -974,7 +977,7 @@ function createStreamRuntime(state, options) {
   }
 
   function queueDraft() {
-    const msg = (state.draft || "").trim();
+    const msg = withDraftReferences(state.draft || "", state).trim();
     if (!msg && !pendingFiles.length) return false;
     sendQueue.push({ message: msg, files: [...pendingFiles] });
     clearComposer();
@@ -1830,14 +1833,14 @@ function createStreamRuntime(state, options) {
     };
   }
 
-  async function spliceSend(text, files = pendingFiles) {
+  async function spliceSend(text, files = pendingFiles, preserveComposer = false) {
     const replyBaseline = new Set(state.items);
     let spliceMsg = (text || "").trim();
     if (!spliceMsg && !files.length) return;
     spliceMsg = options.prepareMessage?.(spliceMsg || `[${files.length} file(s)]`) ?? spliceMsg;
     addMessage("user", spliceMsg || `[${files.length} file(s)]`);
     noteLocalEcho("user", spliceMsg);
-    clearComposer();
+    if (!preserveComposer) clearComposer();
     let res;
     try {
       res = await fetch(apiUrl("/api/chat/stream"), {
@@ -1902,8 +1905,9 @@ function createStreamRuntime(state, options) {
       addMessage("system", "客户端场景不可用，暂时无法发送消息。请检查启动提示并重启客户端。");
       return;
     }
+    if (!Array.isArray(filesOverride)) text = withDraftReferences(text || "", state);
     if (isStreaming) {
-      await spliceSend(text, filesOverride || [...pendingFiles]);
+      await spliceSend(text, filesOverride || [...pendingFiles], Array.isArray(filesOverride));
       return;
     }
     const replyBaseline = new Set(state.items);
@@ -3256,11 +3260,11 @@ function createStreamRuntime(state, options) {
   return {
     start,
     waitForPendingFiles,
-    captureSendSnapshot: () => ({ draft: state.draft, files: [...pendingFiles] }),
+    captureSendSnapshot: () => ({ draft: state.draft, files: [...pendingFiles], references: referenceSignature(state) }),
     prepareSend,
     isBusy: () => isStreaming || !!pendingReply || !!pendingRecovery || preparingSend,
     stageQueuedSend(text, filesOverride = null) {
-      const msg = (text || "").trim();
+      const msg = (Array.isArray(filesOverride) ? text || "" : withDraftReferences(text || "", state)).trim();
       const files = Array.isArray(filesOverride) ? [...filesOverride] : [...pendingFiles];
       if (!msg && !files.length) return null;
       const message = addMessage("user", msg || `[发送了 ${files.length} 个文件: ${files.map(f => f.name).join(", ")}]`);

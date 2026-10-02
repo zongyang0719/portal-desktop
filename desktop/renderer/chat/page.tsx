@@ -37,6 +37,8 @@ import {
   applyShiftEnterListContinue,
 } from "./list-continuation";
 import { ComposerField } from "./components/composer-field";
+import { ComposerReferences } from "./components/composer-references";
+import { draftReferences, setDraftReferences } from "./models/references";
 import { EditorView } from "@codemirror/view";
 
 class ChatErrorBoundary extends Component<
@@ -521,6 +523,9 @@ function ChatView({
           {state.banner}
         </div>
         <div id="input-area">
+          <ComposerReferences references={draftReferences(state)}
+            onRemove={id => { setDraftReferences(state, draftReferences(state).filter(ref => ref.id !== id)); state.changed(); composer.current?.focus(); }}
+            onSource={id => bridge.send({ type: "beings:reference-source", id })} />
           <div
             id="pending-files"
             className={state.files.length ? "active" : ""}
@@ -633,7 +638,7 @@ function ChatView({
               ＋
             </button>
             <div id="desktop-composer-tools">
-              <ChatPlaces send={bridge.send} channels={channels} />
+              {location.protocol !== "beings:" && <ChatPlaces send={bridge.send} channels={channels} />}
             </div>
             <button
               className="btn-icon"

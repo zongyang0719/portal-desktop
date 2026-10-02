@@ -1,6 +1,7 @@
 import type { ChatRuntime, ChatState, ChatPanel } from "../models/chat";
 import type { HistoryScope } from "../models/scenes";
 import type { ChatEditCommand } from "../../../shared/types";
+import { draftReferences, setDraftReferences, validChatReference, MAX_DRAFT_REFERENCES, type ChatReference } from "../models/references";
 
 /** Source-checked desktop transport. It never reads or mutates rendered UI. */
 export function createChatBridge(state: ChatState) {
@@ -17,6 +18,7 @@ export function createChatBridge(state: ChatState) {
     disposed = false;
   const waiting = new Map<string, () => void>();
   const edits = new Map<string, (ok: boolean) => void>();
+  const referenceArchive = new Map<string, ChatReference>();
   function edit(command: ChatEditCommand): Promise<boolean> {
     if (!embedded || location.protocol !== "beings:") return Promise.resolve(document.execCommand(command));
     if (disposed) return Promise.resolve(false);
@@ -49,7 +51,8 @@ export function createChatBridge(state: ChatState) {
   async function beforeSend(text: string) {
     if (!embedded || disposed) return;
     const id = crypto.randomUUID();
-    const hasSceneDraft = Boolean(draftPrefix && text.startsWith(draftPrefix));
+    const referenceIds = [...referenceArchive.values()].filter(ref => text.includes(ref.text)).map(ref => ref.id);
+    const hasSceneDraft = Boolean(referenceIds.length || (draftPrefix && text.startsWith(draftPrefix)));
     await new Promise<void>((resolve) => {
       const finish = () => {
         clearTimeout(timer);
@@ -58,7 +61,7 @@ export function createChatBridge(state: ChatState) {
       };
       const timer = setTimeout(finish, 250);
       waiting.set(id, finish);
-      send({ type: "beings:scene-capture", id, hasSceneDraft });
+      send({ type: "beings:scene-capture", id, hasSceneDraft, referenceIds });
     });
     return (ok: boolean) => {
       if (disposed) return;
@@ -109,6 +112,11 @@ export function createChatBridge(state: ChatState) {
       const data = event.data;
       if (!data || typeof data !== "object") return;
       switch (data.type) {
+        case "beings:references-reset":
+          state.draftReferences = {};
+          referenceArchive.clear();
+          state.changed();
+          return;
         case "beings:search-preview-dismiss":
           if (data.revision === revision) ui.dismissIndexPreview?.();
           return;
@@ -193,6 +201,27 @@ export function createChatBridge(state: ChatState) {
         case "beings:scene-captured":
           if (typeof data.id === "string") waiting.get(data.id)?.();
           return;
+        case "beings:scene-reference": {
+          if (typeof data.id !== "string" || !validChatReference(data.reference) ||
+              typeof data.expiresAt !== "number" || Date.now() > data.expiresAt) return;
+          if (typeof data.sceneId === "string" && data.sceneId !== state.currentScene.sceneId) {
+            send({ type: "beings:scene-reference-result", id: data.id, ok: false, reason: "scene-changed" });
+            return;
+          }
+          const references = draftReferences(state);
+          const duplicate = references.find(ref => ref.text === data.reference.text);
+          const ok = Boolean(duplicate) || references.length < MAX_DRAFT_REFERENCES;
+          if (ok) {
+            if (!duplicate) setDraftReferences(state, [...references, data.reference]);
+            const accepted = duplicate || data.reference;
+            referenceArchive.set(accepted.id, accepted);
+            while (referenceArchive.size > 64) referenceArchive.delete(referenceArchive.keys().next().value!);
+            state.changed();
+            ui.focus();
+          }
+          send({ type: "beings:scene-reference-result", id: data.id, ok, referenceId: duplicate?.id || data.reference.id, reason: ok ? undefined : "limit" });
+          return;
+        }
         case "beings:scene-draft": {
           if (
             typeof data.id !== "string" ||
@@ -251,6 +280,7 @@ export function createChatBridge(state: ChatState) {
       waiting.clear();
       edits.forEach(finish => finish(false));
       edits.clear();
+      referenceArchive.clear();
     },
   };
 }

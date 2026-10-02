@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatState } from "../desktop/renderer/chat/models/chat";
 import { createChatRuntime } from "../desktop/renderer/chat/services/runtime";
+import { draftReferences, setDraftReferences } from "../desktop/renderer/chat/models/references";
 import { ChatProxy } from "../desktop/main/chat/proxy";
 import { parseConnection } from "../desktop/main/chat/connection";
 import { createElement } from "react";
@@ -35,6 +36,70 @@ const response = (value: unknown) =>
 const flush = () => vi.advanceTimersByTimeAsync(0);
 
 describe("React chat runtime lifecycle", () => {
+  it('keeps an edited quotation in the draft instead of mixing it into an already clicked send', async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal('fetch', fetcher);
+    const state = new ChatState(), runtime = createChatRuntime(state);
+    state.draft = '先分析';
+    const quote = { id: 'original', title: '私信', source: 'Alice', excerpt: '原文', text: '原始引用' };
+    setDraftReferences(state, [quote]);
+    const sending = runtime.send(state.draft);
+    setDraftReferences(state, [{ ...quote, id: 'new', text: '后来选择的另一封私信' }]);
+    await sending;
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(state.draft).toBe('先分析');
+    expect(draftReferences(state)[0].id).toBe('new');
+    expect(state.items.some(item => item.kind === 'message' && item.text.includes('引用或附件已变更'))).toBe(true);
+    runtime.dispose();
+  });
+  it('sends only the current scene quotations and leaves another scene draft intact', async () => {
+    const fetcher = vi.fn(async (url: string) => url.includes('/chat/stream')
+      ? new Response('event: message_stop\ndata: {}\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
+      : response({ messages: [] }));
+    vi.stubGlobal('fetch', fetcher);
+    const state = new ChatState();
+    state.currentScene = { sceneId: 'a', sceneLabel: '方案' };
+    const runtime = createChatRuntime(state);
+    const quote = { id: 'ref-a', title: '私信', source: 'Alice', excerpt: '原文', text: '引用 Alice：\n> 原文' };
+    setDraftReferences(state, [quote]);
+    state.draft = '先讨论一下';
+    await runtime.selectScene({ sceneId: 'b' });
+    expect(draftReferences(state)).toEqual([]);
+    state.draft = '另一个场景的草稿';
+    await runtime.selectScene({ sceneId: 'a' });
+    expect(state.draft).toBe('先讨论一下');
+    expect(draftReferences(state)).toEqual([quote]);
+    await runtime.send(state.draft);
+    await flush();
+    const calls = fetcher.mock.calls as unknown as [string, RequestInit][];
+    const sent = JSON.parse(calls.find(([url]) => url.includes('/chat/stream'))![1].body as string);
+    expect(sent.message).toContain('引用 Alice：\n> 原文\n\n先讨论一下');
+    expect(draftReferences(state)).toEqual([]);
+    await runtime.selectScene({ sceneId: 'b' });
+    expect(state.draft).toBe('另一个场景的草稿');
+    runtime.dispose();
+  });
+  it('keeps the visible text and quotations when a separate Town request interrupts a reply', async () => {
+    let calls = 0;
+    const posts: string[] = [];
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      if (!url.includes('/chat/stream')) return response({ messages: [] });
+      posts.push(JSON.parse(init!.body as string).message);
+      if (++calls === 1) return new Response(new ReadableStream({ start(controller) {
+        controller.enqueue(new TextEncoder().encode('event: meta\ndata: {"session_id":"session-test"}\n\n'));
+      } }), { headers: { 'Content-Type': 'text/event-stream' } });
+      return new Response('{}', { status: 202 });
+    });
+    const state = new ChatState(), runtime = createChatRuntime(state);
+    await runtime.send('开始讨论'); await flush();
+    state.draft = '保留的下一条问题';
+    setDraftReferences(state, [{ id: 'next-ref', title: '下一个内容', source: '卷轴', excerpt: '后续', text: '下一条的引用' }]);
+    await runtime.send('请直接回复 Alice', []); await flush();
+    expect(posts.at(-1)).toBe('请直接回复 Alice');
+    expect(state.draft).toBe('保留的下一条问题');
+    expect(draftReferences(state)).toHaveLength(1);
+    runtime.dispose();
+  });
   it.each(['edit', 'remove', 'read-error'])('does not send stale text or incomplete attachments after %s during file reading', async change => {
     let reader!: { onload(): void; onerror(): void; result: string; readyState: number };
     vi.stubGlobal('FileReader', class {

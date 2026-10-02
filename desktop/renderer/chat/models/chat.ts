@@ -1,5 +1,6 @@
 import { Store } from "../../shared/models/store";
 import { messageScene, type HistoryScope, type MessageScene } from "./scenes";
+import type { ChatReference } from "./references";
 
 export type ChatPanel = "model" | "being" | "privacy" | null;
 
@@ -106,6 +107,7 @@ export class ChatState extends Store {
   name = new URLSearchParams(location.search).get("name") || "being";
   soul: Soul = {};
   draft = "";
+  draftReferences: Record<string, ChatReference[]> = {};
   files: Attachment[] = [];
   queued = 0;
   thinking = false;

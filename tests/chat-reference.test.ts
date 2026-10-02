@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { ChatState, type ChatRuntime } from '../desktop/renderer/chat/models/chat';
 import { createChatBridge } from '../desktop/renderer/chat/services/bridge';
+import { draftReferences } from '../desktop/renderer/chat/models/references';
 
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 function fixture() {
@@ -93,5 +94,43 @@ it('sends a Town reply request immediately without replacing the visible draft o
   expect(f.runtime.send).toHaveBeenCalledWith('请回复这条 Town 消息', []);
   expect(f.state.draft).toBe('保留手写草稿');
   expect(f.state.files).toHaveLength(1);
+  f.bridge.dispose();
+});
+
+const reference = (id = 'ref-1') => ({ id, title: '关于工作空间的建议', source: '私信 · Alice', excerpt: '先保留阅读位置。', text: `来自 Alice 的引用 ${id}\n> 先保留阅读位置。` });
+it('attaches, deduplicates and bounds references without editing the text, files or sending', () => {
+  const f = fixture();
+  f.state.draft = '我想先和你讨论';
+  f.state.files = [{ name: 'note.txt', type: 'text/plain', size: 3, base64: 'YWJj' }];
+  const add = (id: string) => f.send({ type: 'beings:scene-reference', reference: reference(id) });
+  add('ref-1'); add('ref-1'); add('ref-2'); add('ref-3'); add('ref-4');
+  expect(draftReferences(f.state).map(ref => ref.id)).toEqual(['ref-1', 'ref-2', 'ref-3']);
+  expect(f.state.draft).toBe('我想先和你讨论');
+  expect(f.state.files).toHaveLength(1);
+  expect(f.runtime.send).not.toHaveBeenCalled();
+  expect(f.parent.postMessage.mock.calls.at(-1)?.[0]).toMatchObject({ ok: false, reason: 'limit' });
+  f.bridge.dispose();
+});
+it('keeps references with their scene and rejects a delayed attachment for another scene', () => {
+  const f = fixture();
+  f.state.currentScene = { sceneId: 'a' };
+  f.send({ type: 'beings:scene-reference', sceneId: 'a', reference: reference() });
+  f.state.currentScene = { sceneId: 'b' };
+  f.send({ type: 'beings:scene-reference', sceneId: 'a', reference: reference('ref-2') });
+  expect(draftReferences(f.state)).toEqual([]);
+  expect(f.parent.postMessage.mock.calls.at(-1)?.[0]).toMatchObject({ ok: false, reason: 'scene-changed' });
+  f.state.currentScene = { sceneId: 'a' };
+  expect(draftReferences(f.state)).toHaveLength(1);
+  f.send({ type: 'beings:references-reset' });
+  expect(draftReferences(f.state)).toEqual([]);
+  f.bridge.dispose();
+});
+it('rejects untrusted, expired and malformed structured references', () => {
+  const f = fixture();
+  f.send({ type: 'beings:scene-reference', reference: reference() }, 'https://untrusted.example');
+  f.send({ type: 'beings:scene-reference', reference: reference(), expiresAt: Date.now() - 1 });
+  f.send({ type: 'beings:scene-reference', reference: { ...reference(), text: 'x'.repeat(16001) } });
+  expect(draftReferences(f.state)).toEqual([]);
+  expect(f.runtime.send).not.toHaveBeenCalled();
   f.bridge.dispose();
 });
