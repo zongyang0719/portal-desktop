@@ -53,11 +53,22 @@ try {
   const child = () => page.frames().find(frame => frame.url().includes('/loom.html'));
   const post = data => page.evaluate(data => document.querySelector('iframe').contentWindow.postMessage(data, location.origin), data);
   await frame.locator('.chat-index-tick').nth(11).waitFor();
-  await frame.locator('#input .cm-content').fill('hold');
+  await frame.locator('#input .cm-content, textarea#input').fill('hold');
   await frame.locator('#send-btn').click();
   await frame.locator('.run-activity.running .run-stop').waitFor();
-  // Small trackpad movements must release bottom-following even within 80px.
   const messages = frame.locator('#messages');
+  const replyOffset = () => messages.evaluate(el => {
+    const reply = [...el.querySelectorAll('.message.being')].at(-1);
+    return reply.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  });
+  assert.ok(Math.abs(await replyOffset() - 20) < 3, 'First streamed reply starts at the top');
+  // One agent turn can contain multiple replies separated by message_stop and tool work.
+  event(heldResponse, 'message_stop', {});
+  await child().waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('#messages')).paddingBottom) < 100);
+  event(heldResponse, 'content_block_delta', { delta: { text: '第二段回复的开头。' } });
+  await frame.getByText('第二段回复的开头。', { exact: true }).waitFor();
+  assert.ok(Math.abs(await replyOffset() - 20) < 3, 'Later reply in the same turn also starts at the top');
+  // Small trackpad movements must release bottom-following even within 80px.
   await frame.locator('#chat-index-latest').click();
   const bottomBeforeWheel = await messages.evaluate(el => el.scrollTop);
   await messages.hover();
@@ -76,12 +87,13 @@ try {
   assert.ok(await messages.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight < 2),
     'Returning to latest resumes following streamed output');
 
+  event(heldResponse, 'message_stop', {});
   await browser.contexts()[0].grantPermissions(['clipboard-read', 'clipboard-write']);
-  const last = frame.locator('.message.being:not(.thinking-indicator)').last();
+  const last = frame.locator('.message.being:not(.consecutive):not(.thinking-indicator)').last();
   await last.hover();
   await last.getByRole('button', { name: '复制正文', exact: true }).click();
   await last.getByRole('button', { name: '已复制', exact: true }).waitFor();
-  assert.match(await child().evaluate(() => navigator.clipboard.readText()), /恢复跟随底部/);
+  assert.match(await child().evaluate(() => navigator.clipboard.readText()), /开始回复/);
   assert.deepEqual(errors, []);
   console.log('PASS: small upward wheel releases streaming follow; reading position stays stable; latest resumes follow; message copy writes full text.');
 } finally {

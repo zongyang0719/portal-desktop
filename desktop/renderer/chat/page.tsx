@@ -103,18 +103,20 @@ function ChatView({
     scrollLock = useRef(true),
     replyAnchor = useRef<string | null>(null),
     anchorPadding = useRef(""),
-    streamingReplySeen = useRef<string | null>(null),
-    anchorNextReply = useRef(true);
+    streamingReplySeen = useRef<string | null>(null);
   const scopeScroll = useRef<Partial<Record<HistoryScope, { top: number; locked: boolean }>>>({});
   function clearReplyAnchor() {
     if (!replyAnchor.current) return;
     replyAnchor.current = null;
-    if (messages.current) messages.current.style.paddingBottom = anchorPadding.current;
+    if (messages.current) {
+      const container = messages.current;
+      container.style.paddingBottom = anchorPadding.current;
+      scrollLock.current = container.scrollHeight - container.scrollTop - container.clientHeight <= 1;
+    }
   }
   function sendDraft() {
     clearReplyAnchor();
     scrollLock.current = true;
-    anchorNextReply.current = true;
     void runtime.send(state.draft);
   }
   function changeScope(scope: HistoryScope) {
@@ -238,8 +240,7 @@ function ChatView({
     let shouldAnchorReply = false;
     if (streamingReply && streamingReplySeen.current !== streamingReply.id) {
       streamingReplySeen.current = streamingReply.id;
-      shouldAnchorReply = anchorNextReply.current && scrollLock.current;
-      anchorNextReply.current = false;
+      shouldAnchorReply = scrollLock.current;
     }
     if (streamingReply && shouldAnchorReply && container) {
       const reply = messageElements.current.get(streamingReply.id);
@@ -449,11 +450,7 @@ function ChatView({
           }}
           onScroll={() => {
             const el = messages.current!;
-            if (replyAnchor.current) {
-              const reply = messageElements.current.get(replyAnchor.current);
-              if (reply && Math.abs(reply.getBoundingClientRect().top - el.getBoundingClientRect().top - 20) <= 3) return;
-              clearReplyAnchor();
-            }
+            if (replyAnchor.current) return;
             scrollLock.current =
               el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
             setSelection(null);
