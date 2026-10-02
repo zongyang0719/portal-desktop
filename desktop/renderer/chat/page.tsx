@@ -242,15 +242,6 @@ function ChatView({
         return;
       }
     }
-    if (!streamingReply && replyAnchor.current && container) {
-      const reply = messageElements.current.get(replyAnchor.current);
-      if (reply && reply.getBoundingClientRect().height < container.clientHeight - 40) {
-        replyAnchor.current = null;
-        scrollLock.current = true;
-        container.scrollTop = container.scrollHeight;
-        return;
-      }
-    }
     if (messages.current && scrollLock.current)
       messages.current.scrollTop = messages.current.scrollHeight;
   });
@@ -445,19 +436,7 @@ function ChatView({
           }}
           onScroll={() => {
             const el = messages.current!;
-            if (replyAnchor.current) {
-              const reply = messageElements.current.get(replyAnchor.current);
-              if (
-                reply &&
-                Math.abs(
-                  reply.getBoundingClientRect().top -
-                    el.getBoundingClientRect().top -
-                    20,
-                ) <= 2
-              )
-                return;
-              replyAnchor.current = null;
-            }
+            if (replyAnchor.current) return;
             scrollLock.current =
               el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
             setSelection(null);
