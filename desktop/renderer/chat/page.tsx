@@ -688,6 +688,7 @@ function ChatView({
         container={messages}
         elements={messageElements}
         scrollLock={scrollLock}
+        clearAnchor={clearReplyAnchor}
         send={bridge.send}
         highlight={setHighlighted}
       />
