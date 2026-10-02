@@ -15,6 +15,8 @@ await build({
   minify: true,
   outfile: path.join(output, "chat.js"),
 });
+// Keep CSS imported by shared React components when adding the legacy chat stylesheet.
+const componentStyles = await readFile(path.join(output, "chat.css"), "utf8");
 await copyFile("loom.html", path.join(output, "loom.html"));
 // Remove the retired DOM adapters from development and packaged public assets.
 for (const asset of [
@@ -25,14 +27,19 @@ for (const asset of [
   "chat-scene.js",
 ])
   await rm(path.join(output, asset), { force: true });
-await copyFile(
-  "node_modules/highlight.js/styles/github-dark.min.css",
+await writeFile(
   path.join(output, "highlight.css"),
+  `.hljs{color:var(--text)}
+.hljs-comment,.hljs-quote{color:var(--text-muted);font-style:italic}
+.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-section{color:var(--text);font-weight:600}
+.hljs-string,.hljs-attr,.hljs-template-variable{color:var(--text-dim)}
+.hljs-title,.hljs-number,.hljs-built_in,.hljs-type,.hljs-meta{color:var(--text-dim)}
+.hljs-addition,.hljs-deletion{color:var(--text);background:var(--surface-tint)}\n`,
 );
 await writeFile(path.join(output, "chat.css"),
   await readFile("desktop/renderer/chat/styles.css", "utf8") + "\n" +
   await readFile("desktop/renderer/shared/model-settings.css", "utf8") + "\n" +
-  await readFile("desktop/renderer/shared/activity.css", "utf8"));
+  await readFile("desktop/renderer/shared/activity.css", "utf8") + "\n" + componentStyles);
 const notices = [];
 for (const [name, file] of [
   ["marked", "LICENSE.md"],

@@ -219,10 +219,10 @@ const keywords = {
   bright: ["哈哈", "😂", "🤣", "笑", "牛逼", "nb", "爽", "振奋", "！！", "666"],
 };
 const colors = {
-  warm: "rgba(255,140,80,0.08)",
-  cool: "rgba(88,166,255,0.06)",
-  deep: "rgba(188,140,255,0.08)",
-  bright: "rgba(255,210,80,0.07)",
+  warm: "rgba(160, 160, 160, 0.08)",
+  cool: "rgba(156, 156, 156, 0.06)",
+  deep: "rgba(159, 159, 159, 0.08)",
+  bright: "rgba(210, 210, 210, 0.07)",
   neutral: "transparent",
 };
 export function TemperatureGlow({ items }: { items: ChatItem[] }) {
