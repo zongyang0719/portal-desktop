@@ -18,4 +18,7 @@ resources/.portal-ready.json
 # Personal development artifacts: keep local data out of commits.
 .stash/
 demo/sidebar.html
+demo/workspace.html
+demo/collaboration.html
+demo/scenes.html
 docs/*-evidence/
