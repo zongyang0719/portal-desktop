@@ -1,5 +1,5 @@
 import { Store, errorText } from "../../shared/models/store";
-import { type SceneStore, type SceneResource } from "../../shared/models/scene";
+import { type SceneStore, type SceneResource, type SceneObservation } from "../../shared/models/scene";
 import type { FeedFilters, FeedReply } from "./feed";
 import { collectMentionNames, type MentionNames } from './mentions';
 import { cacheTownData, shareTownData } from './cache';
@@ -18,6 +18,9 @@ import type {
 } from "../../../shared/types";
 
 export type Data = Record<string, unknown>;
+const readingFields = ["view", "tab", "offset", "search", "scrollKind", "groveKind", "groveStatus", "seedFilters",
+  "selectedId", "directId", "data", "status", "detail", "localKit", "library", "selectedRing", "ringData", "ringTitle", "ringMembers", "feedFilters", "ringSearch", "announcementCategory", "returnView", "forwardView"] as const;
+type ReadingLocation = { state: Pick<TownModel, typeof readingFields[number]>; generation?: TownLiveState["generation"]; scroll: Record<string, number>; observation: SceneObservation; kitReturn?: ReadingLocation };
 export const record = (value: unknown): Data =>
   value && typeof value === "object" && !Array.isArray(value)
     ? (value as Data)
@@ -239,6 +242,7 @@ export class TownModel extends Store {
   sendBusy = false;
   sendTarget?: SendTarget;
   content = "";
+  replyInstructions = "";
   recipient = "";
   sendError = "";
   sendNotice = "";
@@ -247,6 +251,12 @@ export class TownModel extends Store {
   installBusy = false;
   installError = "";
   installRetried = false;
+  installResult?: { name: string; message: string };
+  readScroll: () => Record<string, number> = () => ({});
+  pendingScroll?: Record<string, number>;
+  private selectionLocations = new Map<string, ReadingLocation>();
+  private kitReturn?: ReadingLocation;
+  get hasInstallationSource() { return Boolean(this.kitReturn); }
   environment: Record<string, string> = {};
   private request = 0;
   private detailRequest = 0;
@@ -265,7 +275,7 @@ export class TownModel extends Store {
   private reconcileTimer?: ReturnType<typeof setTimeout>;
   private reconciling = false;
   private historyNavigation = false;
-  private drafts = new Map<string, { content: string; recipient: string }>();
+  private drafts = new Map<string, { content: string; recipient: string; instructions: string }>();
   private feedCache = new Map<string, { data: Data; status: string }>();
   private roomCache = new Map<string, { data: Data; members?: Data[] }>();
   private dataKey = '';
@@ -307,10 +317,15 @@ export class TownModel extends Store {
       this.installedRequest++;
       this.authRequest++;
       this.drafts.clear();
+      this.readingLocations.clear();
+      this.readingScopes.clear();
+      this.selectionLocations.clear();
+      this.kitReturn = undefined;
       this.contactDraft?.finish(false);
       this.feedCache.clear();
       this.roomCache.clear();
       this.content = "";
+      this.replyInstructions = "";
       this.token = "";
       this.pairCode = "";
       if (this.plan && !this.installBusy)
@@ -349,6 +364,11 @@ export class TownModel extends Store {
   private resetIdentity() {
     this.contactDraft?.finish(false);
     this.feedCache.clear();
+    this.selectionLocations.clear();
+    this.readingLocations.clear();
+    this.readingScopes.clear();
+    this.kitReturn = undefined;
+    this.installResult = undefined;
     this.roomCache.clear();
     this.dataKey = '';
     this.pageKey = '';
@@ -389,6 +409,7 @@ export class TownModel extends Store {
     this.sendTarget = undefined;
     this.sendNotice = "";
     this.content = "";
+    this.replyInstructions = "";
     this.recipient = "";
     this.sendOpen = false;
     this.changed();
@@ -525,10 +546,16 @@ export class TownModel extends Store {
     this.updateLive();
   }
   show(view: string, id?: string) {
+    if (this.restoringReading) {
+      this.visible = Boolean(definitions[view]);
+      return;
+    }
+    if (view !== this.view || id !== this.directId) this.sendOpen = false;
     if (view !== "announcements") this.announcementSelection = "";
     if (!this.historyNavigation) {
       this.returnView = "";
       this.forwardView = "";
+      this.kitReturn = undefined;
     }
     this.historyNavigation = false;
     this.request++;
@@ -597,6 +624,12 @@ export class TownModel extends Store {
     void this.loadDetail({ kind: "seed", id });
   }
   returnToSource() {
+    if (this.kitReturn) {
+      const source = this.kitReturn;
+      this.kitReturn = undefined;
+      this.restoreReading(source);
+      return;
+    }
     const view = this.returnView;
     if (!view) return;
     this.forwardView = this.view;
@@ -831,7 +864,7 @@ export class TownModel extends Store {
       if (this.view === "firesides" && this.data) {
         const entries = this.rooms();
         if (!entries.some((entry) => str(entry.id) === this.selectedRing))
-          this.selectedRing = str(entries[0]?.id);
+          this.selectedRing = "";
         const entry = entries.find(
           (entry) => str(entry.id) === this.selectedRing,
         );
@@ -900,10 +933,85 @@ export class TownModel extends Store {
     this.changed();
   }
   choose = (resource: SceneResource) => {
+    this.selectionLocations.set(resource.id, this.captureReading());
+    while (this.selectionLocations.size > 12) this.selectionLocations.delete(this.selectionLocations.keys().next().value!);
     this.scenes.select(resource);
     this.scenes.pin();
     this.showCompanion();
   };
+  restoringReading = false;
+  private readingLocations = new Map<string, ReadingLocation>();
+  private readingScope = "";
+  private readingScopes = new Map<string, Map<string, ReadingLocation>>();
+  activateReadingScope(key: string) {
+    if (key === this.readingScope) return;
+    this.rememberReading();
+    this.readingScopes.set(this.readingScope, this.readingLocations);
+    this.readingScope = key;
+    this.readingLocations = this.readingScopes.get(key) ?? new Map();
+    // A fresh scope has no inherited reading filters or selection. Saved locations
+    // restore these through restoreReading; this does not touch identity or settings.
+    this.view = "";
+    this.tabs = {};
+    this.search = "";
+    this.offset = 0;
+    this.directId = undefined;
+    this.selectedId = "";
+    this.selectedRing = "";
+    this.pendingScroll = undefined;
+  }
+  rememberReading() {
+    if (this.visible && definitions[this.view] && !this.loading && !this.detailLoading && !this.error && !this.detailError)
+      this.readingLocations.set(this.view, this.captureReading());
+  }
+  restoreRemembered(view: string) {
+    const saved = this.readingLocations.get(view);
+    return saved ? this.restoreReading(saved) : false;
+  }
+  closeDetail() {
+    ++this.detailRequest;
+    this.detailLoading = false;
+    this.detailError = undefined;
+    if (this.directId) { this.navigate(this.view); return; }
+    this.selectedId = "";
+    this.selectedRing = "";
+    this.detail = undefined;
+    this.localKit = undefined;
+    this.changed();
+  }
+  private captureReading(): ReadingLocation {
+    return { state: structuredClone(Object.fromEntries(readingFields.map(key => [key, this[key]]))) as ReadingLocation["state"],
+      generation: this.live?.generation, scroll: this.readScroll(), observation: structuredClone(this.scenes.current), kitReturn: this.kitReturn };
+  }
+  private restoreReading(location: ReadingLocation) {
+    if (location.generation !== this.live?.generation) return false;
+    this.restoringReading = true;
+    try { this.navigate(location.state.view, location.state.directId); }
+    finally { this.restoringReading = false; }
+    // Restore the reading frame without a list reload or a stale asynchronous detail.
+    clearTimeout(this.reconcileTimer);
+    ++this.request; ++this.detailRequest; ++this.installedRequest; ++this.memberRequest;
+    this.sendOpen = false;
+    Object.assign(this, structuredClone(location.state));
+    this.kitReturn = location.kitReturn;
+    this.tabs[this.view] = this.tab;
+    this.loading = false;
+    this.detailLoading = false;
+    this.memberLoading = false;
+    this.visible = true;
+    this.error = undefined;
+    this.detailError = undefined;
+    this.pendingScroll = location.scroll;
+    this.scenes.update(location.observation);
+    this.updateLive();
+    this.changed();
+    return true;
+  }
+  restoreSelection(id: string) {
+    const location = this.selectionLocations.get(id);
+    if (!location) return false;
+    return this.restoreReading(location);
+  }
   selectLocal(kit: LocalKit) {
     this.localKit = kit;
     this.selectedId = kit.name;
@@ -1253,11 +1361,13 @@ export class TownModel extends Store {
       this.drafts.set(JSON.stringify(this.sendTarget), {
         content: this.content,
         recipient: this.recipient,
+        instructions: this.replyInstructions,
       });
     while (this.drafts.size > 20)
       this.drafts.delete(this.drafts.keys().next().value!);
     const draft = this.drafts.get(JSON.stringify(next));
     this.content = draft?.content || "";
+    this.replyInstructions = draft?.instructions || "";
     this.recipient = draft?.recipient || recipient || reply?.recipient || "";
     this.sendTarget = next;
     this.sendError = "";
@@ -1313,7 +1423,7 @@ export class TownModel extends Store {
     if (!this.canAskBeing || !target) return false;
     if (target.reply) return Boolean(target.reply.content.trim());
     return Boolean(
-      this.content.trim() &&
+      (this.content.trim() || this.replyInstructions.trim()) &&
         (target.kind !== "dm" || this.recipient.trim()),
     );
   }
@@ -1325,7 +1435,8 @@ export class TownModel extends Store {
     const target = this.sendTarget;
     const reply = target?.reply;
     if (!target || !this.canAskBeingSend) return;
-    const description = this.content.trim();
+    const description = this.replyInstructions.trim();
+    const draft = this.content.trim();
     const content = reply?.content.trim() || "";
     const place = target.kind === "fireside"
       ? this.ringTitle ? `围炉「${this.ringTitle}」` : "围炉"
@@ -1346,17 +1457,18 @@ export class TownModel extends Store {
           `回复对象：${reply.author}`,
           reply.context ? `这条消息所回复的上文：\n${quote(reply.context)}` : "",
           `要回复的原消息：\n${quote(content)}`,
-          description ? `我已经手写的内容或要求，请结合它完善回复：\n${quote(description)}` : "",
+          draft ? `已有回复正文，请以此为基础：\n${quote(draft)}` : "",
+          description ? `给你的写作要求：\n${quote(description)}` : "",
         ]
       : [
           "请根据我的描述和场景位置，帮我写一句适合发布的内容，直接发送，并将发送正文发给我。",
           `场景位置：${place}`,
-          `我的描述：\n${quote(description)}`,
+          draft ? `已有发送正文，请以此为基础：\n${quote(draft)}` : "",
+          description ? `给你的写作要求：\n${quote(description)}` : "",
         ]
     ).filter(Boolean).join("\n\n").slice(0, 33000);
     this.sendOpen = false;
     this.changed();
-    this.navigate("chat");
     this.post({
       type: "beings:town-reply",
       id: crypto.randomUUID(),
@@ -1375,6 +1487,8 @@ export class TownModel extends Store {
   async send() {
     const target = this.sendTarget;
     if (!target || !this.canSend) return;
+    const sourceView = this.view;
+    const sourceRing = this.directId || this.selectedRing;
     if (
       target.generation !== this.live?.generation ||
       target.beingId !== this.live.beingId
@@ -1409,11 +1523,17 @@ export class TownModel extends Store {
       }
       this.drafts.delete(JSON.stringify(target));
       this.content = "";
+      this.replyInstructions = "";
       this.sendNotice = result.warnings?.length
         ? `消息已发送，但部分 @ 提及未解析成功：${result.warnings.join('；')}。请核对目标，无需重复发送原消息。`
         : "";
-      this.sendOpen = Boolean(this.sendNotice);
-      await this.load(true);
+      this.readingLocations.delete(sourceView);
+      const atSource = this.visible && this.view === sourceView &&
+        (target.kind !== "fireside" || (this.directId || this.selectedRing) === sourceRing);
+      this.sendOpen = Boolean(this.sendNotice) && atSource;
+      if (this.sendNotice && !atSource) this.toast(this.sendNotice);
+      if (this.view === sourceView && (target.kind !== "fireside" || (this.directId || this.selectedRing) === sourceRing))
+        await this.load(true);
     } catch (error) {
       if (target === this.sendTarget) this.sendError = errorText(error);
     } finally {
@@ -1444,6 +1564,8 @@ export class TownModel extends Store {
     }
   }
   async showInstalledKit(name: string) {
+    const source = this.view === "kits" && this.tab === "grove" ? this.captureReading() : undefined;
+    if (source) { this.kitReturn = source; this.returnView = "kits"; }
     this.directId = undefined;
     this.tab = "local";
     this.tabs.kits = "local";
@@ -1467,6 +1589,7 @@ export class TownModel extends Store {
         return;
       }
       this.plan = plan;
+      this.installResult = undefined;
       this.environment = {};
       this.installError = "";
       this.installRetried = false;
@@ -1481,6 +1604,7 @@ export class TownModel extends Store {
     if (this.installBusy) return;
     const plan = this.plan;
     this.plan = undefined;
+    this.installResult = undefined;
     this.environment = {};
     this.changed();
     if (plan) void this.api.discardKit(plan.ticket).catch(() => {});
@@ -1499,9 +1623,9 @@ export class TownModel extends Store {
       if (revision !== this.lifecycleRevision) return;
       this.plan = undefined;
       this.environment = {};
-      this.toast(`${result.name}：${result.message}`);
+      this.installResult = { name: result.name, message: result.message };
       if (this.view === "kits") {
-        if (this.tab === "local" && !this.directId) await this.showInstalledKit(result.name);
+        if (this.tab === "local" && !this.directId) await this.load();
         else await this.refreshInstalledKits();
       }
     } catch (error) {

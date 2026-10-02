@@ -38,11 +38,12 @@ export function useSidebarWidth(panel: RefObject<HTMLElement | null>, storageKey
     const measure = () => {
       const available = stage.clientWidth;
       if (!available) return;
+      const readingFocused = stage.parentElement?.dataset.readingFocused === 'true';
       const min = Math.min(SIDEBAR_WIDTH.min, Math.max(0, available - 48));
-      const max = Math.max(min, Math.min(SIDEBAR_WIDTH.max, available - SIDEBAR_WIDTH.contentMin));
+      const max = Math.max(min, Math.min(SIDEBAR_WIDTH.max, available - (readingFocused ? 24 : SIDEBAR_WIDTH.contentMin)));
       setBounds(current => current.min === min && current.max === max ? current : { min, max });
       const sidebarWidth = panel.current?.getBoundingClientRect().width ?? 0;
-      setCanOccupySpace(available - sidebarWidth >= SIDEBAR_WIDTH.contentMin);
+      setCanOccupySpace(readingFocused || available - sidebarWidth >= SIDEBAR_WIDTH.contentMin);
     };
     const observer = new ResizeObserver(measure);
     observer.observe(stage);

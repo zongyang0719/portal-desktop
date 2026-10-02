@@ -38,7 +38,7 @@ import { ChatProxy } from './chat/proxy';
 import { loadDesktopScene, ChatSessions } from './chat/scene';
 import { verifyBeingConnection } from './chat/ready';
 import { redact } from './chat/connection';
-import type { ChatScene, NotificationTarget, SaveSettings } from '../shared/types';
+import type { AppearancePreference, ChatScene, NotificationTarget, SaveSettings } from '../shared/types';
 import { TownLive } from './town/live';
 import { TownClient, TownCredentials, TOWN_ORIGIN } from './town/client';
 import { registerTownIpc } from './town/ipc';
@@ -138,9 +138,12 @@ async function ready() {
     try { repairDevelopmentShortcut(app.getPath('appData'), shell); }
     catch (error) { errorLog.report('notification-identity', error); }
   }
-  let appearance: 'light' | 'dark' = 'light';
-  try { const saved = JSON.parse(await readFile(path.join(app.getPath('userData'), 'appearance.json'), 'utf8')); if (saved.theme === 'dark') appearance = 'dark'; } catch { /* First launch uses the light workspace. */ }
-  nativeTheme.themeSource = appearance;
+  let appearance: AppearancePreference = 'auto';
+  try {
+    const saved = JSON.parse(await readFile(path.join(app.getPath('userData'), 'appearance.json'), 'utf8'));
+    if (saved.theme === 'light' || saved.theme === 'dark') appearance = saved.theme;
+  } catch { /* A new installation follows the system appearance. */ }
+  nativeTheme.themeSource = appearance === 'auto' ? 'system' : appearance;
   const directory = app.getPath('userData');
   const binary = app.isPackaged
     ? path.join(process.resourcesPath, process.platform === 'win32' ? 'heart-portal.exe' : 'heart-portal')
@@ -509,14 +512,13 @@ async function ready() {
   });
   // Initial reads wait for configuration validation and upgrade recovery.
   handle('beings:snapshot', () => exclusive(async () => snapshot()));
-  handle('beings:appearance', (theme?: 'light' | 'dark') => exclusive(async () => {
+  handle('beings:appearance', (theme?: AppearancePreference) => exclusive(async () => {
     if (theme === undefined) return appearance;
-    if (theme !== 'light' && theme !== 'dark') throw new Error('无效的配色。');
+    if (theme !== 'auto' && theme !== 'light' && theme !== 'dark') throw new Error('无效的配色。');
     await mkdir(directory, { recursive: true });
     const file = path.join(directory, 'appearance.json');
     await writeFile(file + '.tmp', JSON.stringify({ theme })); await rename(file + '.tmp', file);
-    nativeTheme.themeSource = theme; appearance = theme;
-    if (!(process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621)) window?.setBackgroundColor(theme === 'dark' ? '#212121' : '#ffffff');
+    nativeTheme.themeSource = theme === 'auto' ? 'system' : theme; appearance = theme;
     return appearance;
   }));
   cancelTownPairing = registerTownIpc({

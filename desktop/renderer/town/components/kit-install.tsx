@@ -1,16 +1,34 @@
-import { Fragment } from "react";
+import { Fragment, useLayoutEffect, useRef } from "react";
 import type { TownModel } from "../models/town";
 import { useModel } from "../../shared/hooks/use-model";
 import { Dialog } from "../../shared/components/dialog";
 export function KitInstall({ model }: { model: TownModel }) {
   const town = useModel(model),
     plan = town.plan;
+  const continueButton = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => { if (town.installResult) continueButton.current?.focus(); }, [town.installResult]);
   return (
     <Dialog
-      open={Boolean(plan)}
+      open={Boolean(plan || town.installResult)}
       busy={town.installBusy}
       onClose={() => town.closeInstall()}
     >
+      {town.installResult && <div className="kit-install-result" role="status">
+        <div className="dialog-heading"><h2>{town.installResult.name} 已安装</h2>
+          <button className="close" type="button" aria-label="关闭安装结果" onClick={() => town.closeInstall()} /></div>
+        <div className="dialog-body">
+          <p>{town.installResult.message}</p>
+          <p className="field-help">原来的工具详情仍在。可以继续浏览，也可以查看本机工具与加载情况。</p>
+        </div>
+        <div className="dialog-footer">
+          <button ref={continueButton} type="button" className="secondary" onClick={() => town.closeInstall()}>继续浏览</button>
+          <button type="button" className="primary" onClick={() => {
+            const name = town.installResult!.name;
+            town.closeInstall();
+            void town.showInstalledKit(name);
+          }}>查看本机 Kit</button>
+        </div>
+      </div>}
       {plan && (
         <form
           className="kit-install-form"

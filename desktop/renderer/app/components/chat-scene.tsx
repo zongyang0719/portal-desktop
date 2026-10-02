@@ -1,6 +1,6 @@
 import type { ChatSessionOperation } from "../../../shared/types";
 import { createPortal } from "react-dom";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { Info, Link2, PanelLeft, Plus } from "lucide-react";
 import type { ChatScene } from "../../../shared/types";
 import { CHAT_SCENE_ACTIVITY_LABELS, type ChatSceneActivity } from "../../../shared/types";
@@ -12,7 +12,16 @@ import type { HistoryScope } from "../../chat/models/scenes";
 import { Dialog } from "../../shared/components/dialog";
 import { SIDEBAR_PEEK, useSidebarPeek } from "../hooks/use-sidebar-peek";
 
-export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connected, scope, scopeReady, onScope, onCopy, onSession, visible = true, onReveal, createRequest = 0, widthPreferenceKey = "portal.sceneSidebarWidth" }: {
+export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connected, scope, scopeReady, onScope, onCopy, onSession, visible = true, onReveal, createRequest = 0, widthPreferenceKey = "portal.sceneSidebarWidth", initiallyPinned = true, footer, heading, headingContainer, triggerContainer, sidebarHeader, navigation }: {
+  /** Optional workspace composition slots; existing callers retain their UI. */
+  initiallyPinned?: boolean;
+  footer?: ReactNode;
+  sidebarHeader?: ReactNode;
+  navigation?: ReactNode;
+  heading?: ReactNode;
+  /** Keep the shared scene controls while placing their heading in the conversation. */
+  headingContainer?: HTMLElement | null;
+  triggerContainer?: HTMLElement | null;
   widthPreferenceKey?: string;
   createRequest?: number;
   activity?: Record<string, ChatSceneActivity>;
@@ -161,7 +170,7 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
   };
   const sidebarPanel = useRef<HTMLElement>(null);
   const size = useSidebarWidth(sidebarPanel, widthPreferenceKey);
-  const sidebar = useSidebarPeek(visible, !!(details || editing || renameId || deleting || menu || hint.active || dragging || sizing), size.canOccupySpace, sidebarPanel);
+  const sidebar = useSidebarPeek(visible, !!(details || editing || renameId || deleting || menu || hint.active || dragging || sizing), size.canOccupySpace, sidebarPanel, initiallyPinned);
   useEffect(() => { setSizing(size.resizing); }, [size.resizing]);
   const move = async (ids: string[], before?: string) => {
     await selectionRequest.current;
@@ -182,10 +191,7 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
   };
   const closeMenu = () => { if (menu) focusSession(menu.scene.scene_id); setMenu(undefined); };
   const label = scene?.scene_meta.scene_label || "场景标记不可用";
-  return (
-    <>
-      <div className="chat-scene-control">
-        <button ref={sidebar.trigger} id="chat-scene-indicator" className="chat-scene-indicator" type="button"
+  const triggerButton = (<button ref={sidebar.trigger} id="chat-scene-indicator" className="chat-scene-indicator" type="button"
           aria-label={`${sidebar.peek && !sidebar.pinned ? "固定" : sidebar.shown ? "收起" : "展开"}场景列表`}
           aria-controls="chat-session-panel" aria-expanded={sidebar.shown} aria-pressed={sidebar.effectivePinned && visible}
           data-instant={sidebar.instant}
@@ -195,18 +201,24 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
             if (!visible) onReveal?.();
           }}>
           <PanelLeft className="chat-scene-icon" aria-hidden="true" />
-        </button>
+        </button>);
+  return (
+    <>
+      <div className="chat-scene-control">
+        {triggerContainer ? createPortal(triggerButton, triggerContainer) : triggerButton}
         <div ref={sidebar.edge} className="chat-sidebar-edge" aria-hidden="true" hidden={!visible || sidebar.pinned}
           style={{ width: SIDEBAR_PEEK.hotzoneWidth }} />
-        <aside ref={sidebar.panel} id="chat-session-panel" className="chat-session-panel" aria-label="场景列表"
+        <aside ref={sidebar.panel} id="chat-session-panel" className={"chat-session-panel" + (sidebarHeader ? " workspace-sidebar" : "")} aria-label={sidebarHeader ? "导航与场景" : "场景列表"}
           data-pinned={sidebar.effectivePinned && visible} data-open={sidebar.shown} data-peek={sidebar.peek} data-instant={sidebar.instant}
           inert={!sidebar.shown} aria-hidden={!sidebar.shown}>
+          {sidebarHeader && <div className="workspace-sidebar-header">{sidebarHeader}</div>}
           <div className="chat-session-create-actions">
+            {sidebarHeader && <span className="workspace-section-label">场景</span>}
             <button id="new-chat-session" className="chat-session-new" type="button" aria-label="新建场景"
             data-sidebar-hint={!connected ? "连接 Being 后可新建场景" : busy ? "正在保存，请稍候" : undefined}
             disabled={!connected || busy} onClick={() => edit("create")}>
             <Plus aria-hidden="true" />
-            新建场景
+            {sidebarHeader ? null : "新建场景"}
             </button>
             <button id="bind-chat-session" className="chat-session-bind" type="button" aria-label="绑定已有场景"
               data-sidebar-hint={!connected ? "连接 Being 后可绑定场景" : busy ? "正在保存，请稍候" : "绑定已有场景"} disabled={!connected || busy} onClick={() => edit("bind")}>
@@ -229,23 +241,24 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
             data-resizing={size.resizing} data-sidebar-hint="拖动调整宽度 · 双击恢复默认" {...size.props}
             onKeyDown={event => { size.props.onKeyDown(event); if (event.key === "Enter") { event.preventDefault(); sidebar.collapse(); } }} />
           <span className="sidebar-sr-only" role="status" aria-live="polite">{selection.length > 1 ? `已选择 ${selection.length} 个场景` : announcement}</span>
+          {navigation}
           <div className="chat-session-footer">
-            <label className="chat-session-context-toggle">
+            {footer ?? <label className="chat-session-context-toggle">
               <input type="checkbox" checked={scope === "all"} disabled={!scopeReady || !scene}
                 aria-label="显示全部场景上下文" onChange={event => onScope(event.target.checked ? "all" : "current")} />
               <span>全部上下文</span>
-            </label>
+            </label>}
           </div>
           {error && !editing && !deleting && <p role="alert" className="chat-session-error">{error}</p>}
 
         </aside>
-        <div className="chat-scene-heading">
-          <span className="chat-scene-label" data-sidebar-hint={label} data-sidebar-hint-overflow>{scene ? label : "场景"}</span>
+        {(() => { const content = <div className="chat-scene-heading">
+          {heading ?? <><span className="chat-scene-label" data-sidebar-hint={label} data-sidebar-hint-overflow>{scene ? label : "场景"}</span>
           <button id="chat-scene-details-trigger" className="chat-scene-info" type="button" aria-label="场景信息"
             data-sidebar-hint="场景信息" disabled={!scene} onClick={() => setDetails(scene)}>
             <Info aria-hidden="true" />
-          </button>
-        </div>
+          </button></>}
+        </div>; return headingContainer ? createPortal(content, headingContainer) : content; })()}
       </div>
       {hint.node}
       {menu && createPortal(<div ref={menuRef} className="chat-session-context-menu" role="menu" aria-label="场景操作" tabIndex={-1}

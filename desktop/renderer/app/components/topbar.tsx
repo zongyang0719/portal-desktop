@@ -3,9 +3,39 @@ import type { AppModel } from "../models/app";
 import { useModel } from "../../shared/hooks/use-model";
 import { ChatSceneIndicator } from "./chat-scene";
 import { UpdateProgress } from "./update-progress";
-export function Topbar({ model }: { model: AppModel }) {
+import { Search } from "lucide-react";
+import { WorkspaceFooter } from "./workspace-navigation";
+export function Topbar({ model, headingContainer, triggerContainer }: { model: AppModel; headingContainer?: HTMLElement | null; triggerContainer?: HTMLElement | null }) {
+  const app = useModel(model), hasToken = Boolean(app.snapshot?.settings.hasToken);
+  return <header className="topbar workspace-topbar">
+      <ChatSceneIndicator
+        sidebarHeader={<BeingMenu model={app} />}
+        footer={<WorkspaceFooter model={app} />}
+        headingContainer={headingContainer}
+        triggerContainer={triggerContainer}
+        initiallyPinned={false}
+        createRequest={app.chatSessionCreateRequest}
+        visible={app.view === "chat" || app.placePresentation === "panel"}
+        onReveal={app.revealChat}
+        scene={app.snapshot?.chatScene}
+        sessions={app.snapshot?.chatSessions}
+        activity={app.chatSceneActivity}
+        onSession={(operation, value, sceneId) => app.changeChatSession(operation, value, sceneId)}
+        connected={hasToken}
+        scope={app.chatHistoryScope}
+        scopeReady={hasToken && !app.chatLoading && app.chatHistoryScopeKnown}
+        onScope={(scope) => app.changeChatHistoryScope(scope)}
+        onCopy={(id) => void app.run(async () => {
+          await app.api.copyText(id);
+          app.toast("场景 ID 已复制");
+        })}
+      />
+    <button type="button" className="workspace-search" aria-label="查找对话" title="查找对话" disabled={!hasToken}
+      onClick={() => app.openSearch()}><Search size={17} aria-hidden="true" /></button>
+  </header>;
+}
+function BeingMenu({ model }: { model: AppModel }) {
   const app = useModel(model);
-  const town = useModel(model.town);
   const [expanded, setExpanded] = useState(false),
     [visible, setVisible] = useState(false),
     [help, setHelp] = useState(false);
@@ -137,6 +167,8 @@ export function Topbar({ model }: { model: AppModel }) {
     ? "外部运行"
     : portalLabels[portalPhase];
   const portalName = app.snapshot?.settings.portalName?.trim() || "Heart Portal";
+  const beingName = app.snapshot?.settings.being || "Being";
+  const portalNeedsAttention = portalPhase === "error" || Boolean(portal?.conflict);
   const checkingUpdate = app.updateChecking || app.update?.phase === "checking";
   const updateActivity = app.update?.activity;
   const downloadUpdate = () => {
@@ -144,86 +176,13 @@ export function Topbar({ model }: { model: AppModel }) {
     void app.downloadClientUpdate();
   };
   return (
-    <header className="topbar">
-      <ChatSceneIndicator
-        createRequest={app.chatSessionCreateRequest}
-        visible={app.view === "chat" || app.placePresentation === "panel"}
-        onReveal={() => {
-          if (app.placePresentation !== "panel") app.navigate("chat");
-        }}
-        scene={app.snapshot?.chatScene}
-        sessions={app.snapshot?.chatSessions}
-        activity={app.chatSceneActivity}
-        onSession={(operation, value, sceneId) => app.changeChatSession(operation, value, sceneId)}
-        connected={hasToken}
-        scope={app.chatHistoryScope}
-        scopeReady={hasToken && !app.chatLoading && app.chatHistoryScopeKnown}
-        onScope={(scope) => app.changeChatHistoryScope(scope)}
-        onCopy={(id) => void app.run(async () => {
-          await app.api.copyText(id);
-          app.toast("场景 ID 已复制");
-        })}
-      />
-      <div className="pair-name">
-        <span className="pair-human">你</span>
-        <span className="pair-link" aria-hidden="true">
-          ·
-        </span>
-        <span id="conversation-name">
-          {town.displayName || app.snapshot?.settings.being || "Being"}
-        </span>
-        <button
-          className={`sbs-header-switch${app.sbsKnown && app.sbsEnabled ? " enabled" : ""}`}
-          type="button"
-          aria-label="切换 SBS 自主醒来"
-          aria-pressed={app.sbsKnown ? app.sbsEnabled : undefined}
-          title={app.sbsKnown ? (app.sbsEnabled ? "SBS 自主醒来：开" : "SBS 自主醒来：关") : "SBS 状态未同步，可刷新重试"}
-          disabled={!hasToken || !app.sbsKnown || app.chatLoading}
-          onClick={() => app.toggleSbs()}
-        >
-          <span className="sbs-header-dot" aria-hidden="true" />
-        </button>
-      </div>
-      <div className="topbar-actions">
-        <button
-          id="local-portal-status"
-          className="local-portal-status"
-          type="button"
-          data-phase={portalPhase}
-          aria-label={`本机 Portal：${portalName}，${portalLabel}`}
-          onClick={() => app.navigate("portal")}
-        >
-          <span className="local-portal-dot" aria-hidden="true" />
-          <span className="local-portal-copy" aria-hidden="true">
-            <span className="local-portal-label local-portal-state-label">
-              本机 Portal · {portalLabel}
-            </span>
-            <span className="local-portal-label local-portal-name">
-              {portalName}
-            </span>
-          </span>
-        </button>
+    <div className="workspace-being">
         <UpdateProgress
           state={app.update}
           onDownload={downloadUpdate}
           onCancel={() => void app.run(() => app.api.cancelUpdate())}
           onInstall={() => void app.run(() => app.api.installUpdate())}
         />
-        <button
-          id="refresh-chat"
-          className="topbar-icon-button"
-          aria-label="刷新 Being 对话"
-          title="刷新 Being 对话"
-          disabled={!hasToken || app.chatLoading}
-          aria-busy={app.chatLoading}
-          onClick={() => {
-            if (app.snapshot) app.applySnapshot(app.snapshot, true);
-          }}
-        >
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M20 11a8 8 0 0 0-14.9-3.9L3 9m0 0V4m0 5h5M4 13a8 8 0 0 0 14.9 3.9L21 15m0 0v5m0-5h-5" />
-          </svg>
-        </button>
         <details
           id="conversation-options"
           ref={options}
@@ -233,6 +192,7 @@ export function Topbar({ model }: { model: AppModel }) {
             if (
               button &&
               button.id !== "check-updates" &&
+              button.id !== "toggle-sbs" &&
               button !== helpButton.current &&
               button !== backButton.current
             )
@@ -273,15 +233,17 @@ export function Topbar({ model }: { model: AppModel }) {
           <summary
             id="options-trigger"
             ref={trigger}
-            aria-label="更多选项"
-            title="更多选项"
+            aria-label={`${beingName}，设置与连接${portalNeedsAttention ? "，Portal 需要处理" : ""}`}
+            title="设置与连接"
             aria-expanded={expanded}
             onClick={(event) => {
               event.preventDefault();
               toggle(!expanded);
             }}
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+            <span id="conversation-name">{beingName}</span>
+            {portalNeedsAttention && <svg className="connection-warning" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 10 18H2L12 3Z" /><path d="M12 9v4m0 3v.5" /></svg>}
+            <svg className="options-ellipsis" viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="5" cy="12" r="1.5" />
               <circle cx="12" cy="12" r="1.5" />
               <circle cx="19" cy="12" r="1.5" />
@@ -301,37 +263,42 @@ export function Topbar({ model }: { model: AppModel }) {
                   {app.api?.platform === "win32" ? "Ctrl F" : "⌘ F"}
                 </small>
               </button>
-              <div className="options-divider" />
-              <button data-view="town" onClick={() => app.navigate("town")}>
-                小镇
+              <button
+                id="refresh-chat"
+                disabled={!hasToken || app.chatLoading}
+                aria-busy={app.chatLoading}
+                onClick={() => { if (app.snapshot) app.applySnapshot(app.snapshot, true); }}
+              >
+                {app.chatLoading ? "正在刷新…" : "刷新对话"}
               </button>
-              <button data-view="kits" onClick={() => app.navigate("kits")}>
-                工具
+              <div className="options-divider" />
+              <button
+                id="local-portal-status"
+                className="portal-menu-item"
+                data-phase={portalPhase}
+                aria-label={`本机 Portal：${portalName}，${portalLabel}`}
+                title={portalName}
+                onClick={() => app.navigate("portal")}
+              >
+                <span>本机 Portal</span><small>{portalLabel}</small>
               </button>
               <button
-                id="open-browser"
-                onClick={() =>
-                  void app.run(async () => {
-                    await app.api.openBrowser();
-                    requestAnimationFrame(() => {
-                      document.getElementById("browser-address")?.focus();
-                      (
-                        document.getElementById(
-                          "browser-address",
-                        ) as HTMLInputElement
-                      )?.select();
-                    });
-                  })
-                }
+                id="toggle-sbs"
+                className="sbs-menu-toggle"
+                type="button"
+                aria-label="切换 SBS 自主醒来"
+                aria-pressed={app.sbsKnown ? app.sbsEnabled : undefined}
+                disabled={!hasToken || !app.sbsKnown || app.chatLoading}
+                onClick={() => app.toggleSbs()}
               >
-                浏览器
+                自主醒来 <small>{app.sbsKnown ? app.sbsEnabled ? "开启" : "关闭" : "未同步"}</small>
               </button>
               <div className="options-divider" />
               <button
                 id="client-settings-button"
                 onClick={() => void app.openClientSettings()}
               >
-                设置 <small>⌘ ,</small>
+                设置 <small>{app.api?.platform === "win32" ? "Ctrl ," : "⌘ ,"}</small>
               </button>
               <button
                 id="options-help"
@@ -409,7 +376,6 @@ export function Topbar({ model }: { model: AppModel }) {
             </div>
           </div>
         </details>
-      </div>
-    </header>
+    </div>
   );
 }

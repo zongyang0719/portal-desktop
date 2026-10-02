@@ -34,9 +34,27 @@ export function Town({ model }: { model: TownModel }) {
     refreshing = Boolean((town.loading || town.detailLoading) && (town.data || town.ringData || town.library || town.detail)),
     root = useRef<HTMLElement>(null);
   useLayoutEffect(() => { if (root.current) root.current.scrollTop = 0; }, [town.view, town.directId]);
+  useLayoutEffect(() => {
+    const selectors = ["#town-body", ".catalog-list", ".catalog-detail", ".fireside-thread", ".fireside-room-list"];
+    town.readScroll = () => Object.fromEntries(selectors.map(selector => [selector, root.current?.querySelector(selector)?.scrollTop || 0]));
+    const saved = town.pendingScroll;
+    if (saved && root.current) {
+      // Child layout effects reset a newly selected detail first; restore after that commit.
+      const frame = requestAnimationFrame(() => {
+        if (town.pendingScroll !== saved) return;
+        for (const [selector, top] of Object.entries(saved)) {
+          const element = root.current?.querySelector(selector);
+          if (element) element.scrollTop = top;
+        }
+        town.pendingScroll = undefined;
+      });
+      return () => cancelAnimationFrame(frame);
+    }
+  });
   return (
     <section
       id="town-view"
+      data-detail={Boolean(town.directId || town.selectedId || (town.view === "firesides" && town.selectedRing))}
       ref={root}
       className={`view${social ? " social-view" : ""}${paginated ? " paginated-view" : ""}${town.view === "embers" ? " bookshelf-view" : ""}${["scrolls", "embers", "announcements"].includes(town.view) && !town.directId ? " reading-catalog" : ""}${town.view === "kits" && town.tab === "grove" && !town.directId ? " kit-catalog" : ""}${town.view === "seeds" && !town.directId ? " seed-catalog" : ""}`}
       hidden={!town.visible || !definition}
@@ -150,10 +168,11 @@ export function Town({ model }: { model: TownModel }) {
             <button
               id="town-auth-button"
               className="secondary"
+              title={town.authLabel}
               hidden={town.view === "seeds"}
               onClick={() => void town.auth()}
             >
-              {town.authLabel}
+              {town.displayName || town.authLabel}
             </button>
             <button
               id="town-refresh"

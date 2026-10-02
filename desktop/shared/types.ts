@@ -1,3 +1,5 @@
+export type AppearancePreference = 'auto' | 'light' | 'dark';
+
 export interface UpdateState {
   phase: 'idle' | 'checking' | 'available' | 'current' | 'unavailable';
   currentVersion: string; latestVersion?: string; message: string; releaseUrl: string;
@@ -56,7 +58,7 @@ export interface ClientStartup { supported: boolean; enabled: boolean; message: 
 export interface NotificationPreferences { enabled: boolean; mail: boolean; firesides: boolean; bonfire: boolean }
 export interface NotificationSettings { preferences: NotificationPreferences; supported: boolean; message: string }
 export interface NotificationTarget { channel: TownChannel; firesideId?: string }
-export interface BrowserState { open: boolean; address: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error?: string }
+export interface BrowserState { open: boolean; address: string; title: string; loading: boolean; canGoBack: boolean; canGoForward: boolean; error?: string; activation?: number }
 export interface DiagnosticReport { version: string; build: string; platform: string; pid: number; startedAt: string; checkedAt: string; checks: { name: string; status: 'ok' | 'warning' | 'error'; detail: string }[]; logs: string[] }
 export interface BrowserBounds { x: number; y: number; width: number; height: number; visible: boolean }
 export type BrowserAction = 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'close';
@@ -85,7 +87,7 @@ export interface DesktopAPI {
   cancelUpdate(): Promise<void>;
   updateState(): Promise<UpdateState>;
   onUpdate(callback: (state: UpdateState) => void): () => void;
-  appearance(theme?: 'light' | 'dark'): Promise<'light' | 'dark'>;
+  appearance(theme?: AppearancePreference): Promise<AppearancePreference>;
   town(query: TownQuery): Promise<TownResult>;
   townLive(): Promise<TownLiveState>;
   reconnectTown(): Promise<void>;

@@ -1,6 +1,7 @@
 import type { ChatSessionOperation } from "../../../shared/types";
 import type {
   DesktopAPI,
+  AppearancePreference,
   Snapshot,
   ChatSceneActivity,
   PortalState,
@@ -14,15 +15,68 @@ import { Store, errorText } from "../../shared/models/store";
 import { WorkspaceModel } from "./workspace";
 import { TownModel } from "../../town/models/town";
 import type { HistoryScope } from "../../chat/models/scenes";
+import { groupForView, placeGroups, type PlaceGroup } from "./navigation";
+import { defaultPlacement, PlacementStore, placementKey, type ChatPlacement, type ContentPlacement } from "../../workspace/placement";
 
 type SettingsRoute = "" | "connection" | "town" | "model" | "portal" | "diagnostics";
 
 export class AppModel extends Store {
   snapshot?: Snapshot;
   theme: "light" | "dark" = "light";
+  themePreference: AppearancePreference = "auto";
   startup: "loading" | "ready" | "error" = "loading";
   view = "chat";
-  placePresentation: "dialog" | "panel" = "dialog";
+  placement = defaultPlacement();
+  private placementIdentity = "";
+  private restoringPlacement = false;
+  private placements: PlacementStore;
+  setChatPlacement = (chat: ChatPlacement) => {
+    this.placement = { ...this.placement, chat };
+    this.savePlacement();
+    this.changed();
+  };
+  revealChat = () => {
+    if (this.placement.chat.mode === "edge") this.setChatPlacement({ ...this.placement.chat, mode: "docked" });
+  };
+  private savePlacement() {
+    if (!this.restoringPlacement && this.placementIdentity && !this.placements.put(this.placementIdentity, this.placement))
+      this.toast("本次摆放已保留；本地存储不可用，重启后可能无法恢复。");
+  }
+  private placeContent(content: ContentPlacement) {
+    if (this.restoringPlacement) return;
+    this.placement = { ...this.placement, content };
+    this.savePlacement();
+  }
+  browserVisible = false;
+  placeFocused = false;
+  private groupDestinations: Partial<Record<PlaceGroup, string>> = {};
+  openPlaceGroup(group: PlaceGroup) {
+    const destination = this.groupDestinations[group] || placeGroups[group].initial;
+    if (this.view === destination && !this.browserVisible) return;
+    this.navigate(destination);
+  }
+  async openBrowser(url?: string) {
+    this.revealBrowser();
+    await this.run(async () => {
+      try { await this.api.openBrowser(url); }
+      catch (error) { this.hideBrowser(); throw error; }
+    });
+  }
+  revealBrowser() {
+    if (this.browserVisible) return;
+    this.town.rememberReading();
+    this.browserVisible = true;
+    this.placeContent({ view: "browser" });
+    this.changed();
+  }
+  hideBrowser = () => {
+    if (!this.browserVisible) return;
+    this.browserVisible = false;
+    this.town.restoreRemembered(this.view);
+    this.placeContent(this.view === "chat" ? null : { view: this.view });
+    this.changed();
+  };
+  placePresentation: "dialog" | "panel" = "panel";
   placePanelWidth = 620;
   chatSource = "";
   chatLoading = false;
@@ -128,18 +182,23 @@ export class AppModel extends Store {
     (error) => this.toast(error),
     (data) => this.post(data),
     () => Boolean(this.chatSource),
+    () => this.snapshot?.chatScene?.scene_id,
+    source => Boolean(source.selection && this.town.restoreSelection(source.selection.id)),
   );
   readonly town: TownModel;
   constructor(readonly api: DesktopAPI) {
     super();
+    let storage: Storage | undefined;
+    try { storage = typeof localStorage === "undefined" ? undefined : localStorage; } catch { /* Optional storage. */ }
+    this.placements = new PlacementStore(storage);
     this.town = new TownModel(
-      api,
+      { ...api, openBrowser: (url?: string) => this.openBrowser(url) },
       this.toast,
       this.navigate,
       this.workspace.scenes,
       () => {
-        this.navigate("chat");
-        this.workspace.toggle(true);
+        this.revealChat();
+        this.workspace.compose();
       },
       (data) => this.post(data),
       () => this.changed(),
@@ -162,15 +221,21 @@ export class AppModel extends Store {
       const size = Number(localStorage.getItem("beings:reading-size"));
       if (Number.isInteger(size) && size >= 13 && size <= 21)
         this.readingSize = size;
-      if (localStorage.getItem("beings:place-presentation") === "panel")
-        this.placePresentation = "panel";
+      // Reading now shares the right pane. Ignore the obsolete modal preference.
+      this.placePresentation = "panel";
       const panelWidth = Number(localStorage.getItem("beings:place-panel-width"));
       if (Number.isInteger(panelWidth) && panelWidth >= 220 && panelWidth <= 1600)
         this.placePanelWidth = panelWidth;
     } catch {
       /* Optional preference. */
     }
+    const systemTheme = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : undefined;
+    const syncSystemTheme = () => {
+      if (this.themePreference === "auto") this.applyTheme("auto");
+    };
+    systemTheme?.addEventListener("change", syncSystemTheme);
     const cleanups = [
+      () => systemTheme?.removeEventListener("change", syncSystemTheme),
       cleanupWorkspace,
       this.town.start(),
       this.api.onNotificationOpen(() => {
@@ -224,7 +289,7 @@ export class AppModel extends Store {
         this.api.snapshot(),
       ]);
       if (revision !== this.initializeRevision) return;
-      this.theme = theme;
+      this.applyTheme(theme);
       this.applySnapshot(state);
       this.startup = "ready";
       await this.openNotification();
@@ -250,6 +315,15 @@ export class AppModel extends Store {
     }
   };
   navigate = (view: string, id?: string) => {
+    this.placeContent(view === "chat" ? null : { view, ...(id ? { id } : {}) });
+    if (!this.town.restoringReading) {
+      const wasBrowser = this.browserVisible;
+      if (this.view !== view && !wasBrowser && !this.restoringPlacement) this.town.rememberReading();
+      this.browserVisible = false;
+      const group = groupForView(view);
+      if (group) this.groupDestinations[group] = view;
+      if (id === undefined && (this.restoringPlacement || this.view !== view || wasBrowser) && this.town.restoreRemembered(view)) return;
+    }
     this.view = view;
     const scene = this.snapshot?.chatScene?.scene_id;
     if (view === "chat" && this.chatHistoryScope === "current" && scene && this.chatSceneActivity[scene] === "done") {
@@ -262,13 +336,8 @@ export class AppModel extends Store {
     this.changed();
   };
   setPlacePresentation = (presentation: "dialog" | "panel") => {
-    if (this.placePresentation === presentation) return;
-    this.placePresentation = presentation;
-    try {
-      localStorage.setItem("beings:place-presentation", presentation);
-    } catch {
-      /* Optional preference. */
-    }
+    // Compatibility for existing callers; reading no longer has a modal presentation.
+    this.placePresentation = "panel";
     this.changed();
   };
   setPlacePanelWidth = (width: number, persist = false) => {
@@ -297,6 +366,22 @@ export class AppModel extends Store {
     reload ||= Boolean(this.snapshot && next.settings.endpoint !== this.snapshot.settings.endpoint);
     this.snapshot = next;
     this.workspace.snapshot(next);
+    const identity = placementKey(next.settings.endpoint, next.settings.being, next.chatScene?.scene_id ?? "");
+    if (identity !== this.placementIdentity) {
+      this.town.activateReadingScope(identity);
+      this.placementIdentity = identity;
+      this.placement = this.placements.get(identity);
+      this.restoringPlacement = true;
+      try {
+        const content = this.placement.content;
+        const view = content?.view === "browser" ? "chat" : content?.view ?? "chat";
+        if (view !== "chat" || this.view !== "chat" || this.browserVisible) this.navigate(view, content?.id);
+        if (content?.view === "browser") {
+          this.browserVisible = true;
+          void this.api.openBrowser?.().catch(this.toast);
+        }
+      } finally { this.restoringPlacement = false; }
+    }
     if (next.settings.hasToken && (!this.chatSource || reload)) {
       this.chatSceneActivity = {};
       this.readSceneReplies.clear();
@@ -357,8 +442,6 @@ export class AppModel extends Store {
       return;
     }
     this.chatHistoryScope = "current";
-    if (this.placePresentation !== "panel" || this.view === "chat")
-      this.navigate("chat");
     this.postCurrentSession();
     if (next.chatScene && next.chatScene.scene_id !== previousSceneId)
       this.toast(`已切到「${next.chatScene.scene_meta.scene_label}」场景`);
@@ -373,8 +456,6 @@ export class AppModel extends Store {
   changeChatHistoryScope(scope: HistoryScope) {
     if (!this.chatSource || this.chatLoading || !this.chatHistoryScopeKnown || (scope === "current" && !this.snapshot?.chatScene)) return;
     this.chatHistoryScope = scope;
-    if (this.placePresentation !== "panel" || this.view === "chat")
-      this.navigate("chat");
     this.post({ type: "beings:history-scope", scope, revision: new URL(this.chatSource).searchParams.get("revision") });
   }
   setChatHistoryScope(scope: HistoryScope) {
@@ -391,14 +472,21 @@ export class AppModel extends Store {
     this.post({ type: "beings:appearance", theme: this.theme });
     this.post({ type: "beings:reading", size: this.readingSize });
   }
-  async toggleTheme() {
+  applyTheme(preference: AppearancePreference) {
+    this.themePreference = preference;
+    this.theme = preference === "auto"
+      ? (typeof matchMedia === "function" && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : preference;
+    this.postAppearance();
+    this.changed();
+  }
+  async setTheme(preference: AppearancePreference) {
     await this.run(async () => {
-      this.theme = await this.api.appearance(
-        this.theme === "light" ? "dark" : "light",
-      );
-      this.postAppearance();
-      this.changed();
+      this.applyTheme(await this.api.appearance(preference));
     });
+  }
+  async toggleTheme() {
+    await this.setTheme(this.theme === "light" ? "dark" : "light");
   }
   setReadingSize(size: number) {
     this.readingSize = size;
@@ -412,6 +500,7 @@ export class AppModel extends Store {
   }
   openSearch() {
     if (!this.snapshot?.settings.hasToken) return;
+    this.revealChat();
     this.searchOpen = true;
     this.post({ type: "beings:search-request" });
     this.changed();
@@ -493,6 +582,7 @@ export class AppModel extends Store {
     this.changed();
   };
   closePlace = () => {
+    this.placeFocused = false;
     this.settingsRoute = "";
     this.settingsForwardRoute = "";
     this.navigate("chat");
@@ -524,8 +614,8 @@ export class AppModel extends Store {
       this.workspace.scenes.select({ id: `portal-logs:${request}`, title: "Portal 日志",
         author: "本机 Portal", excerpt: logs.text, private: true });
       this.workspace.scenes.pin();
-      this.navigate("chat");
-      this.workspace.toggle(true);
+      this.setPlacePresentation("panel");
+      this.workspace.compose();
     } catch (error) {
       if (this.logsRequest === request) this.toast(error);
     } finally {

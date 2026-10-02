@@ -4,7 +4,7 @@ import { useModel } from "../../shared/hooks/use-model";
 import { Dialog } from "../../shared/components/dialog";
 import { Markdown } from '../../shared/components/markdown';
 import { MentionText } from './mention-text';
-export function TownComposer({ model }: { model: TownModel }) {
+export function TownComposer({ model, inline = false }: { model: TownModel; inline?: boolean }) {
   const town = useModel(model);
   const kind = town.sendTarget?.kind;
   const count = [...town.content].length;
@@ -18,16 +18,10 @@ export function TownComposer({ model }: { model: TownModel }) {
   };
   useEffect(() => {
     if (town.sendOpen)
-      (kind === "dm" ? recipient.current : content.current)?.focus();
+      (kind === "dm" && !town.sendTarget?.reply ? recipient.current : content.current)?.focus();
   }, [town.sendOpen, kind]);
-  return (
-    <Dialog
-      open={town.sendOpen}
-      busy={town.sendBusy}
-      onClose={close}
-      id="town-send-dialog"
-      aria-labelledby="town-send-title"
-    >
+  if (inline && !town.sendOpen) return null;
+  const form = (
       <form
         id="town-send-form"
         onSubmit={(event) => {
@@ -39,7 +33,7 @@ export function TownComposer({ model }: { model: TownModel }) {
           <h2 id="town-send-title">
             {kind === "dm"
               ? town.sendTarget?.reply
-                ? "回复私信"
+                ? `回复 ${town.sendTarget.reply.recipientName || town.sendTarget.reply.author}`
                 : "写私信"
               : kind === "fireside"
                 ? "在围炉说一句"
@@ -49,7 +43,7 @@ export function TownComposer({ model }: { model: TownModel }) {
             id="town-send-close"
             type="button"
             className="close"
-            aria-label="关闭发送窗口"
+            aria-label="收起回复，保留草稿"
             disabled={town.sendBusy}
             onClick={close}
           ></button>
@@ -62,7 +56,7 @@ export function TownComposer({ model }: { model: TownModel }) {
         <label
           id="town-recipient-label"
           htmlFor="town-recipient"
-          hidden={kind !== "dm"}
+          hidden={kind !== "dm" || Boolean(town.sendTarget?.reply)}
         >
           收件 Being
         </label>
@@ -72,7 +66,7 @@ export function TownComposer({ model }: { model: TownModel }) {
           maxLength={160}
           placeholder="Town ID（t_…）或准确显示名"
           ref={recipient}
-          hidden={kind !== "dm"}
+          hidden={kind !== "dm" || Boolean(town.sendTarget?.reply)}
           required={kind === "dm"}
           value={town.sendTarget?.reply?.recipientName || town.recipient}
           disabled={town.sendBusy}
@@ -84,7 +78,7 @@ export function TownComposer({ model }: { model: TownModel }) {
         />
         <div id="town-send-reply" hidden={!town.sendTarget?.reply}>
           <blockquote id="town-reply-preview">
-            {town.sendTarget?.reply
+            {inline && town.sendTarget?.reply ? <span>{town.sendTarget.reply.preview}</span> : town.sendTarget?.reply
               ? <><strong>{town.sendTarget.reply.author}：</strong><Markdown content={town.sendTarget.reply.preview}
                   renderText={text => <MentionText text={text} names={town.mentionNames} />} /></>
               : ""}
@@ -102,18 +96,16 @@ export function TownComposer({ model }: { model: TownModel }) {
           </button>
         </div>
         <label htmlFor="town-send-content">
-          {town.sendTarget?.reply
-            ? "回复内容或给 Being 的要求"
-            : "内容或给 Being 的描述"}
+          {town.sendTarget?.reply ? "回复正文" : "发送正文"}
         </label>
         <textarea
           id="town-send-content"
-          rows={6}
+          rows={inline ? 3 : 6}
           required
           placeholder={
             town.sendTarget?.reply
-              ? "直接写回复，或描述希望 Being 如何回复…"
-              : "直接写下要发送的内容，或描述希望 Being 写什么…"
+              ? "写下要发出的回复…"
+              : "写下要发送的内容…"
           }
           ref={content}
           maxLength={kind === "bonfire" ? 8000 : 64000}
@@ -134,11 +126,19 @@ export function TownComposer({ model }: { model: TownModel }) {
             }
           }}
         ></textarea>
-        <p className="field-help town-being-send-help">
-          {town.sendTarget?.reply
-            ? "“让 Being 回复”会结合原消息、回复上文和你的要求直接发送。"
-            : "“让 Being 发送”会把这里作为描述，并附上当前场景位置，请 Being 拟写后直接发送。"}
-        </p>
+        <details className="town-delegate">
+          <summary>委托 Being 拟写并发送</summary>
+          <label htmlFor="town-send-instructions">给 Being 的要求</label>
+          <textarea id="town-send-instructions" rows={2} maxLength={8000}
+            placeholder="例如：先认可她的想法，再补充一个建议。"
+            value={town.replyInstructions} disabled={town.sendBusy}
+            onChange={event => { town.replyInstructions = event.target.value; town.changed(); }} />
+          <p className="field-help">会把原文、已有正文和要求交给主对话中的 Being，由它拟写并直接发送。只想商量时，可以继续在左边的主对话讨论。</p>
+          <button id="town-ask-being" type="button" className="secondary"
+            disabled={town.sendBusy || !town.canAskBeingSend}
+            title={!town.canAskBeing ? "请先连接对话 Being" : "交给 Being 拟写并直接发送"}
+            onClick={() => town.askBeing()}>委托拟写并发送</button>
+        </details>
         <p id="town-send-error" className="form-error" role="alert">
           {town.sendError}
         </p>
@@ -155,38 +155,19 @@ export function TownComposer({ model }: { model: TownModel }) {
           <span className="send-shortcut">⌘ / Ctrl + Enter 发送</span>
           <div className="town-send-actions">
             <button
-              id="town-ask-being"
-              type="button"
-              className="secondary"
-              disabled={town.sendBusy || !town.canAskBeingSend}
-              title={
-                !town.canAskBeing
-                  ? "请先连接对话 Being"
-                  : !town.sendTarget?.reply && !town.content.trim()
-                    ? "请先写下希望 Being 参考的描述"
-                    : town.sendTarget?.kind === "dm" &&
-                        !town.sendTarget.reply &&
-                        !town.recipient.trim()
-                      ? "请先填写收件 Being"
-                      : town.sendTarget?.reply
-                        ? "连同原消息、回复上文和当前要求一起交给 Being 直接回复"
-                        : "连同当前场景位置和你的描述一起交给 Being 直接发送"
-              }
-              onClick={() => town.askBeing()}
-            >
-              {town.sendTarget?.reply ? "让 Being 回复" : "让 Being 发送"}
-            </button>
-            <button
               id="town-send-submit"
               type="submit"
               className="primary"
               disabled={!town.canSend}
             >
-              发送
+              发送正文
             </button>
           </div>
         </div>
       </form>
-    </Dialog>
   );
+  return inline
+    ? <section className="town-inline-composer" aria-labelledby="town-send-title">{form}</section>
+    : <Dialog open={town.sendOpen} busy={town.sendBusy} onClose={close}
+        id="town-send-dialog" aria-labelledby="town-send-title">{form}</Dialog>;
 }

@@ -26,7 +26,7 @@ const macSignOptions: OsxSignOptions & { continueOnError: false } = {
   preAutoEntitlements: macIdentity !== '-',
   preEmbedProvisioningProfile: false,
   ignore: ignoreMacSigningFile,
-  optionsForFile: () => macIdentity === '-' ? { timestamp: 'none' } : {},
+  optionsForFile: () => macIdentity === '-' ? { timestamp: 'none', hardenedRuntime: false } : {},
 };
 const config: ForgeConfig = {
   outDir: process.env.PORTAL_DESKTOP_PACKAGE_OUT || 'out',

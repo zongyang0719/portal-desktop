@@ -19,6 +19,9 @@ export interface MainWindowOptions {
 
 export function createMainWindow(options: MainWindowOptions) {
   const acrylic = process.platform === 'win32' && Number(os.release().split('.')[2]) >= 22621;
+  const mac = process.platform === 'darwin';
+  const usesMaterial = () => (mac || acrylic) && !nativeTheme.prefersReducedTransparency && !nativeTheme.shouldUseHighContrastColors;
+  const background = () => usesMaterial() ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#222222' : '#f1f1f1';
   const windowIcon = () => path.join(
     app.isPackaged ? process.resourcesPath : app.getAppPath(),
     app.isPackaged ? 'branding' : 'resources/branding',
@@ -29,11 +32,12 @@ export function createMainWindow(options: MainWindowOptions) {
   const window = new BrowserWindow({
     width: 1280, height: 860, minWidth: 920, minHeight: 640, title: CLIENT_NAME,
     icon: windowIcon(),
-    backgroundColor: acrylic ? '#00000000' : nativeTheme.shouldUseDarkColors ? '#212121' : '#ffffff',
-    ...(acrylic ? { backgroundMaterial: 'acrylic' as const } : {}),
+    backgroundColor: background(),
+    ...(mac ? { vibrancy: usesMaterial() ? 'under-window' as const : undefined, visualEffectState: 'active' as const } : {}),
+    ...(acrylic ? { backgroundMaterial: usesMaterial() ? 'acrylic' as const : 'none' as const } : {}),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : process.platform === 'win32' ? 'hidden' : 'default',
     ...(process.platform === 'win32' ? { titleBarOverlay: {
-      height: 52, color: '#00000000', symbolColor: nativeTheme.shouldUseDarkColors ? '#e5ebe0' : '#2a3631',
+      height: 52, color: '#00000000', symbolColor: nativeTheme.shouldUseDarkColors ? '#ededed' : '#3c3c3c',
     } } : {}),
     autoHideMenuBar: process.platform === 'win32',
     trafficLightPosition: { x: 18, y: 20 },
@@ -42,13 +46,18 @@ export function createMainWindow(options: MainWindowOptions) {
       nodeIntegration: false, nodeIntegrationInSubFrames: false, webSecurity: true,
     },
   });
+  // Native material and captions track appearance and accessibility changes together.
+  const updateAppearance = () => {
+    if (window.isDestroyed()) return;
+    if (mac) window.setVibrancy(usesMaterial() ? 'under-window' : null);
+    if (acrylic) window.setBackgroundMaterial(usesMaterial() ? 'acrylic' : 'none');
+    window.setBackgroundColor(background());
+    if (process.platform === 'win32') window.setTitleBarOverlay({ symbolColor: nativeTheme.shouldUseDarkColors ? '#ededed' : '#3c3c3c' });
+  };
+  nativeTheme.on('updated', updateAppearance);
+  window.once('closed', () => nativeTheme.removeListener('updated', updateAppearance));
   if (process.platform === 'win32') {
     window.setMenuBarVisibility(false);
-    const updateCaption = () => {
-      if (!window.isDestroyed()) window.setTitleBarOverlay({ symbolColor: nativeTheme.shouldUseDarkColors ? '#e5ebe0' : '#2a3631' });
-    };
-    nativeTheme.on('updated', updateCaption);
-    window.once('closed', () => nativeTheme.removeListener('updated', updateCaption));
     // The installed shell shortcut and tray follow the taskbar theme.
     window.hookWindowMessage(0x001a, refreshSystemTheme);
   }

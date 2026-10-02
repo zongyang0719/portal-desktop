@@ -1,0 +1,29 @@
+/* Structural rules only. Existing palette and semantic status classes remain intact. */
+.desktop-ia .workspace-body{min-width:0;overflow:hidden}
+.desktop-rail{position:relative;z-index:85;width:52px;flex:0 0 52px;display:flex;flex-direction:column;align-items:center;gap:6px;padding:52px 6px 12px}
+.desktop-rail-links{flex:1;min-height:0;overflow-y:auto;scrollbar-width:none}
+.desktop-rail button,.desktop-scene-trigger{position:relative;display:grid;place-items:center;width:38px;height:38px;flex-shrink:0;padding:0;margin:3px 0;border-radius:9px;color:var(--secondary);-webkit-app-region:no-drag}
+.desktop-rail button[aria-current=page]{background:var(--selected);color:var(--text)}
+.desktop-rail-label{display:none;position:fixed;left:49px;padding:6px 10px;border:1px solid var(--line);border-radius:7px;background:var(--control);color:var(--text);white-space:nowrap;font-size:12px;font-weight:400;pointer-events:none}
+.desktop-rail button:is(:hover,:focus-visible) .desktop-rail-label{display:block}
+.desktop-rail .destination-unread{position:absolute;right:5px;top:5px}
+.desktop-scene-trigger #chat-scene-indicator{position:static;margin:0;width:38px;height:38px}
+.desktop-ia .workspace-stage>.topbar{height:52px;flex:0 0 52px;margin-left:0;padding-left:16px;background:transparent}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true])>.topbar{margin-left:var(--scene-sidebar-width)}
+.desktop-panel-shell{display:flex;flex:1;min-width:0;min-height:0;margin:0 10px 10px 0;border:1px solid var(--reading-border);border-radius:var(--reading-radius);overflow:hidden;background:var(--content-material)}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true])>.desktop-panel-shell{margin-left:var(--scene-sidebar-width)}
+.desktop-ia .workspace-sidebar{padding:54px 10px 12px}
+.desktop-ia .workspace-sidebar .chat-session-list{flex:1;max-height:none}
+.desktop-ia .workspace-utilities{display:none}
+.desktop-ia .placement-chat #chat-view{display:flex;flex:1;min-height:0;margin:0;border:0;border-radius:0;transition:none}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true]) .placement-chat #chat-view{margin-left:0}
+.desktop-ia #place-panel{display:flex;flex-direction:column;flex:1;width:100%;height:100%;min-width:0;max-width:none;margin:0;border:0;border-radius:0}
+.desktop-ia #place-panel .place-sheet-heading{padding:14px 18px 10px}
+.desktop-ia #browser-panel{display:flex;flex-direction:column;flex:1;min-width:0;width:100%;max-width:none;margin:0;border:0;border-radius:0}
+.desktop-ia .placement-chat-title .chat-scene-heading{width:100%;justify-content:flex-start}
+.desktop-ia .placement-chat-title .chat-scene-label{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.desktop-ia .placement-chat-title .chat-scene-info{flex-shrink:0;opacity:1}
+.desktop-ia .placement-chat-title .chat-scene-history{display:none}
+html[data-platform=darwin] .desktop-ia .workspace-stage>.topbar{padding-left:60px}
+html[data-platform=win32] .desktop-ia .workspace-stage>.topbar{padding-right:148px}
+@media(max-height:640px){.desktop-rail{padding-top:46px}.desktop-rail button,.desktop-scene-trigger{height:32px;margin:2px 0}}

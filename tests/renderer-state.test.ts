@@ -172,9 +172,10 @@ describe("React desktop state lifecycle", () => {
       content: "你怎么看？",
       context: "柳树：前一条消息",
     });
-    model.content = "语气温和一些";
+    model.content = "谢谢你整理方案。";
+    model.replyInstructions = "语气温和一些";
     model.askBeing();
-    expect(navigate).toHaveBeenCalledWith("chat");
+    expect(navigate).not.toHaveBeenCalled();
     const request = post.mock.calls[0][0];
     expect(request).toMatchObject({ type: "beings:town-reply" });
     expect(request.text).toContain("请帮我拟一段回复，直接发送，并将回复正文发给我。");
@@ -183,6 +184,8 @@ describe("React desktop state lifecycle", () => {
     expect(request.text).toContain("> 柳树：前一条消息");
     expect(request.text).toContain("> 你怎么看？");
     expect(request.text).toContain("> 语气温和一些");
+    expect(request.text).toContain("已有回复正文，请以此为基础：\n> 谢谢你整理方案。");
+    expect(request.text).toContain("给你的写作要求：\n> 语气温和一些");
     expect(model.sendOpen).toBe(false);
   });
   it("asks the Being to write and send a new Town post from the user's description and place", () => {
@@ -194,10 +197,10 @@ describe("React desktop state lifecycle", () => {
     model.ringTitle = "产品讨论";
     model.live = live();
     model.compose();
-    model.content = "提醒大家周五前提交反馈，语气轻松一些";
+    model.replyInstructions = "提醒大家周五前提交反馈，语气轻松一些";
     expect(model.canAskBeingSend).toBe(true);
     model.askBeing();
-    expect(navigate).toHaveBeenCalledWith("chat");
+    expect(navigate).not.toHaveBeenCalled();
     const request = post.mock.calls[0][0];
     expect(request).toMatchObject({ type: "beings:town-reply" });
     expect(request.text).toContain("请根据我的描述和场景位置，帮我写一句适合发布的内容，直接发送");
@@ -290,13 +293,13 @@ describe("React desktop state lifecycle", () => {
 
     await app.changeChatSession("select", discussion.scene_id);
     expect(app.toastMessage).toBe("已切到「方案讨论」场景");
-    expect(app.view).toBe("bonfire");
+    expect(app.view).toBe("chat"); // A scene with no placement starts from the shared factory default.
 
     app.toastMessage = "";
     await app.changeChatSession("rename", "技术方案", discussion.scene_id);
     expect(app.toastMessage).toBe("");
   });
-  it("previews Portal logs through Together without posting until the user composes a reference", async () => {
+  it("attaches Portal logs without closing the reading panel or sending a chat message", async () => {
     vi.useFakeTimers();
     const pending = deferred<{ endpoint: string; text: string }>();
     const getLogs = vi.fn(() => pending.promise);
@@ -304,26 +307,27 @@ describe("React desktop state lifecycle", () => {
     const messages = () => post.mock.calls.map(call => call[0]).filter(message => message.type !== 'beings:town-activity');
     app.post = post;
     app.applySnapshot(state()); app.frameLoaded(); app.connection = 'online';
+    app.navigate('portal');
     post.mockClear();
     const selecting = app.sharePortalLogs();
     await app.sharePortalLogs();
     expect(getLogs).toHaveBeenCalledOnce();
     pending.resolve({ endpoint: state().settings.endpoint, text: 'redacted log fixture' });
     await selecting;
-    expect(messages()).toEqual([]);
+    expect(messages()).toHaveLength(1);
     expect(app.logsLoading).toBe(false);
-    expect(app.view).toBe('chat');
-    expect(app.workspace.open).toBe(true);
+    expect(app.view).toBe('portal');
+    expect(app.workspace.open).toBe(false);
     expect(app.workspace.scenes.reference).toMatchObject({ view: 'portal', title: 'Portal 设置',
       selection: { title: 'Portal 日志', author: '本机 Portal', excerpt: 'redacted log fixture', private: true } });
     app.applySnapshot({ ...state(), portal: { phase: 'connected', message: 'new state', logs: ['later output'] } });
     expect(app.workspace.scenes.reference?.selection?.excerpt).toBe('redacted log fixture');
-    app.workspace.compose();
     expect(messages()).toHaveLength(1);
     const message = messages()[0];
-    expect(message).toMatchObject({ type: 'beings:scene-draft',
-      text: '一起看看Portal 设置里的这段（本机 Portal）：\n\n> redacted log fixture' });
-    app.workspace.receive({ type: 'beings:scene-draft-result', id: message.id, ok: true });
+    expect(message).toMatchObject({ type: 'beings:scene-reference',
+      reference: { text: '一起看看Portal 设置里的这段（本机 Portal）：\n\n> redacted log fixture' } });
+    app.workspace.receive({ type: 'beings:scene-reference-result', id: message.id, referenceId: message.reference.id, ok: true });
+    expect(app.view).toBe('portal');
     expect(app.workspace.open).toBe(false);
     expect(messages()).toHaveLength(1);
   });
@@ -381,7 +385,7 @@ describe("React desktop state lifecycle", () => {
     expect(app.sbsKnown).toBe(false);
   });
 
-  it("refreshes each place navigation and clears pending details when changing features", async () => {
+  it("restores the previous reading view, refreshes explicitly and discards pending details", async () => {
     const pending = deferred<TownResult>();
     const query = vi.fn<DesktopAPI['town']>(async query => {
       if (query.kind === 'seed') return pending.promise;
@@ -406,9 +410,10 @@ describe("React desktop state lifecycle", () => {
     expect(app.town.detail).toBeUndefined();
     app.navigate('bonfire');
     await settle();
-    app.navigate('bonfire');
+    expect(query.mock.calls.filter(([query]) => query.kind === 'bonfire')).toHaveLength(1);
+    await app.town.load(true);
     await settle();
-    expect(query.mock.calls.filter(([query]) => query.kind === 'bonfire')).toHaveLength(3);
+    expect(query.mock.calls.filter(([query]) => query.kind === 'bonfire')).toHaveLength(2);
     expect(app.town.data?.messages).toEqual([{ content: 'fresh bonfire' }]);
   });
 
@@ -1239,7 +1244,7 @@ describe("shared reading behavior", () => {
     expect(post).not.toHaveBeenCalled();
     workspace.compose();
     expect(post).toHaveBeenCalledOnce();
-    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'beings:scene-draft', text: '一起看看私信里的这段：\n\n> private text' }));
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ type: 'beings:scene-reference', reference: expect.objectContaining({ text: '一起看看私信里的这段：\n\n> private text' }) }));
     expect(toast).not.toHaveBeenCalled();
     workspace.scenes.resetIdentity();
     expect(workspace.open).toBe(false);

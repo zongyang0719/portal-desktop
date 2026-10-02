@@ -89,7 +89,6 @@ export function ChatSearch({ model }: { model: AppModel }) {
               title={entry.text}
               onClick={() => {
                 close();
-                app.navigate("chat");
                 app.post({ type: "beings:search-jump", id: entry.id });
               }}
             >

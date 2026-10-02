@@ -14,11 +14,14 @@ export class WorkspaceModel extends Store {
   private online = false;
   private pending: SceneObservation | null = null;
   private frozen: SceneObservation | null = null;
+  private referenceSources = new Map<string, SceneObservation>();
   constructor(
     private navigate: (view: string) => void,
     private toast: (message: unknown) => void,
     private post: (data: unknown) => void,
     private hasFrame: () => boolean,
+    private currentChatScene: () => string | undefined = () => undefined,
+    private restoreSource?: (source: SceneObservation) => boolean,
   ) {
     super();
   }
@@ -28,6 +31,8 @@ export class WorkspaceModel extends Store {
       this.frozen = null;
       this.pending = null;
       this.draftRequest = "";
+      this.referenceSources.clear();
+      this.post({ type: "beings:references-reset" });
       clearTimeout(this.timer);
       this.changed();
     };
@@ -77,10 +82,14 @@ export class WorkspaceModel extends Store {
     this.scenes.event("清除了讨论对象");
     this.toggle(false);
   }
-  returnToSource() {
-    const ref = this.scenes.reference;
+  returnToSource(id?: string) {
+    const ref = id ? this.referenceSources.get(id) : this.scenes.reference;
     if (ref) {
-      this.navigate(ref.view);
+      if (ref.view === "chat" && ref.selection?.id.startsWith("chat:")) {
+        this.post({ type: "beings:search-jump", id: ref.selection.id.slice(5) });
+        return;
+      }
+      if (!this.restoreSource?.(ref)) this.navigate(ref.view);
       this.scenes.event("返回来源页面", ref.title, "引用保留发送前版本");
     }
   }
@@ -88,9 +97,12 @@ export class WorkspaceModel extends Store {
     this.frozen = null;
   }
   receive(message: Record<string, unknown>) {
+    if (message.type === "beings:reference-source" && typeof message.id === "string") {
+      this.returnToSource(message.id);
+      return;
+    }
     if (
       message.type === "beings:scene-select" &&
-      this.scenes.current.view === "chat" &&
       typeof message.id === "string" &&
       /^[a-zA-Z0-9-]{1,80}$/.test(message.id) &&
       typeof message.text === "string" &&
@@ -99,15 +111,16 @@ export class WorkspaceModel extends Store {
       (message.role === "user" || message.role === "being")
     ) {
       const excerpt = sceneExcerpt(message.text.trim());
-      this.scenes.select({
+      const selection = {
         id: `chat:${message.id}`,
         title: excerpt.split("\n")[0].slice(0, 60),
         author: message.role === "user" ? "你" : this.scenes.being,
         excerpt,
         private: true,
-      });
-      this.scenes.pin();
-      this.toggle(true);
+      };
+      this.scenes.reference = { ...this.scenes.current, view: "chat", title: "当前对话",
+        sceneId: `conversation:${this.scenes.endpoint}`, selection };
+      this.compose();
     }
     if (
       message.type === "beings:scene-capture" &&
@@ -115,8 +128,9 @@ export class WorkspaceModel extends Store {
       /^[a-zA-Z0-9-]{1,80}$/.test(message.id)
     ) {
       const old = this.scenes.reference;
+      const referenceId = Array.isArray(message.referenceIds) ? message.referenceIds.find(id => typeof id === "string" && this.referenceSources.has(id)) : undefined;
       this.scenes.reference =
-        message.hasSceneDraft && this.frozen ? this.frozen : null;
+        referenceId ? this.referenceSources.get(referenceId)! : message.hasSceneDraft && this.frozen ? this.frozen : null;
       this.scenes.capture(message.id);
       this.scenes.reference = old;
       this.changed();
@@ -140,7 +154,7 @@ export class WorkspaceModel extends Store {
       if (message.ok === true && message.hasSceneDraft) this.frozen = null;
     }
     if (
-      message.type === "beings:scene-draft-result" &&
+      message.type === "beings:scene-reference-result" &&
       message.id === this.draftRequest &&
       this.draftRequest
     ) {
@@ -148,17 +162,20 @@ export class WorkspaceModel extends Store {
       this.draftRequest = "";
       if (message.ok) {
         this.frozen = this.pending;
+        if (this.pending && typeof message.referenceId === "string") {
+          this.referenceSources.set(message.referenceId, this.pending);
+          while (this.referenceSources.size > 64) this.referenceSources.delete(this.referenceSources.keys().next().value!);
+        }
         this.pending = null;
         this.scenes.event(
           "引用已放入对话草稿",
           this.scenes.reference?.title,
           "尚未发送",
         );
-        this.navigate("chat");
         this.toggle(false);
       } else {
         this.pending = null;
-        this.toast("对话输入框已有草稿，请先处理原草稿，再放入引用。");
+        this.toast(message.reason === "limit" ? "这条消息已有 3 条引用，请先移除一条再添加。" : "对话场景已变化，请在当前场景重新添加引用。");
       }
       this.changed();
     }
@@ -187,9 +204,12 @@ export class WorkspaceModel extends Store {
     this.draftRequest = crypto.randomUUID();
     this.changed();
     this.post({
-      type: "beings:scene-draft",
+      type: "beings:scene-reference",
       id: this.draftRequest,
-      text,
+      sceneId: this.currentChatScene(),
+      reference: { id: this.draftRequest, title: resource.title.slice(0, 160) || "引用内容",
+        source: `${scene.title}${resource.author ? ` · ${resource.author}` : ""}`.slice(0, 240),
+        excerpt: resource.excerpt, text },
       expiresAt: Date.now() + 2500,
     });
     clearTimeout(this.timer);

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 export const SIDEBAR_PEEK = { hotzoneWidth: 8, openDelay: 300, closeDelay: 300 } as const;
 
 /** Hover is transient. Only the titlebar button changes the pinned state. */
-export function useSidebarPeek(enabled: boolean, engaged: boolean, canOccupySpace = true, panelRef?: RefObject<HTMLElement | null>) {
-  const [pinned, setPinned] = useState(true);
+export function useSidebarPeek(enabled: boolean, engaged: boolean, canOccupySpace = true, panelRef?: RefObject<HTMLElement | null>, initiallyPinned = true) {
+  const [pinned, setPinned] = useState(initiallyPinned);
   const [peek, setPeek] = useState(false);
   const [instant, setInstant] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);

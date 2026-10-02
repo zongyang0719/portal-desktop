@@ -181,15 +181,16 @@ export function ClientSettings({ model }: { model: AppModel }) {
             <div className="appearance-setting-row">
               <span id="settings-appearance">主题配色</span>
               <div id="theme-toggle" className="theme-options" role="group" aria-label="主题配色">
-                {(["light", "dark"] as const).map(theme => (
+                {(["auto", "light", "dark"] as const).map(theme => (
                   <button key={theme} id={`theme-${theme}`} type="button"
-                    aria-pressed={app.theme === theme}
-                    onClick={() => { if (app.theme !== theme) void app.toggleTheme(); }}>
+                    aria-pressed={app.themePreference === theme}
+                    title={theme === "auto" ? "跟随系统外观" : undefined}
+                    onClick={() => { if (app.themePreference !== theme) void app.setTheme(theme); }}>
                     <svg viewBox="0 0 20 20" aria-hidden="true">
-                      {theme === "light" ? <><circle cx="10" cy="10" r="3.25" /><path d="M10 1.5v2m0 13v2M1.5 10h2m13 0h2M4 4l1.4 1.4m9.2 9.2L16 16M4 16l1.4-1.4m9.2-9.2L16 4" /></>
+                      {theme === "auto" ? <><rect x="2" y="3" width="16" height="11" rx="2" /><path d="M7 17h6m-3-3v3" /></> : theme === "light" ? <><circle cx="10" cy="10" r="3.25" /><path d="M10 1.5v2m0 13v2M1.5 10h2m13 0h2M4 4l1.4 1.4m9.2 9.2L16 16M4 16l1.4-1.4m9.2-9.2L16 4" /></>
                         : <path d="M16.8 12.1A7 7 0 0 1 7.9 3.2a7 7 0 1 0 8.9 8.9Z" />}
                     </svg>
-                    {theme === "light" ? "浅色" : "深色"}
+                    {theme === "auto" ? "自动" : theme === "light" ? "浅色" : "深色"}
                   </button>
                 ))}
               </div>

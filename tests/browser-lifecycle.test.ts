@@ -30,6 +30,22 @@ function fixture() {
 }
 
 describe('browser lifecycle without starting Electron', () => {
+  it('keeps a parked page alive and only marks explicit opens for activation', () => {
+    const { win, browser } = fixture();
+    browser.open('https://example.com/');
+    const view = win.contentView.addChildView.mock.calls[0][0];
+    const activation = browser.state.activation!;
+    browser.setBounds({ x: 500, y: 100, width: 480, height: 600, visible: false });
+    expect(view.webContents.isDestroyed()).toBe(false);
+    expect(view.setVisible).toHaveBeenLastCalledWith(false);
+    view.webContents.emit('did-stop-loading');
+    expect(browser.state.activation).toBe(activation);
+    browser.open();
+    expect(browser.state.activation).toBe(activation + 1);
+    expect(browser.state.address).toBe('https://example.com/');
+    expect(win.contentView.addChildView).toHaveBeenCalledTimes(1);
+    browser.close();
+  });
   it('closes native contents when its window is gone and does not publish to a destroyed shell', () => {
     const { win, browser, publish } = fixture();
     browser.open('https://example.com/?token=fixture-secret');

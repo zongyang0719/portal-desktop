@@ -1,60 +1,29 @@
-import { useLayoutEffect, useRef } from "react";
+import { ArrowLeft, X } from "lucide-react";
+import type { AppModel } from "../models/app";
 import { definitions } from "../../town/models/town";
+import { useModel } from "../../shared/hooks/use-model";
 import { NavigationControls } from "../../shared/components/navigation-controls";
 
-const places = [
-  ["bonfire", "篝火"], ["firesides", "围炉"], ["mail", "私信"],
-  ["announcements", "公告"], ["contacts", "通讯录"],
-  ["seeds", "花园"], ["embers", "书架"], ["scrolls", "卷轴"],
-  ["kits", "工具库"], ["town", "广场"],
-] as const;
-
-export function PlaceHeading({ view, navigate, presentation, onPresentationChange, onBack, onForward, onClose = () => navigate("chat") }: {
-  view: string;
-  navigate: (view: string) => void;
-  presentation: "dialog" | "panel";
-  onPresentationChange: (presentation: "dialog" | "panel") => void;
-  onBack?: () => void;
-  onForward?: () => void;
-  onClose?: () => void;
-}) {
-  const nav = useRef<HTMLElement>(null);
-  useLayoutEffect(() => {
-    const menu = nav.current;
-    const selected = menu?.querySelector<HTMLButtonElement>('[aria-current="page"]');
-    if (!menu || !selected) return;
-    const left = selected.offsetLeft, right = left + selected.offsetWidth;
-    if (left < menu.scrollLeft) menu.scrollLeft = left;
-    else if (right > menu.scrollLeft + menu.clientWidth) menu.scrollLeft = right - menu.clientWidth;
-  }, [view]);
-  return (
-    <header className="place-sheet-heading">
-      <div className="place-sheet-title-row">
-        <div className="place-sheet-title-main">
-          <h1 id="view-title">{definitions[view]?.title || (view === "portal" ? "Portal 设置" : "对话")}</h1>
-          <NavigationControls back={onBack} forward={onForward} />
-        </div>
-        <div className="place-sheet-actions">
-          <button type="button" className="icon-button place-presentation-toggle"
-            aria-label={presentation === "dialog" ? "在右侧展示" : "以弹窗显示"}
-            title={presentation === "dialog" ? "在右侧展示" : "以弹窗显示"}
-            onClick={() => onPresentationChange(presentation === "dialog" ? "panel" : "dialog")}>
-            {presentation === "dialog" ? (
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M13 4v16" /></svg>
-            ) : (
-              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" /><path d="M8 9h8M8 12h5" /></svg>
-            )}
-          </button>
-          <button id="back-to-chat" className="icon-button close" aria-label="回到对话" title="回到对话"
-            onClick={onClose} />
-        </div>
+export function PlaceHeading({ model }: { model: AppModel }) {
+  const app = useModel(model), town = useModel(app.town);
+  const title = definitions[app.view]?.title || "本机 Portal";
+  const detail = town.visible && Boolean(town.directId || town.selectedId || (app.view === "firesides" && town.selectedRing));
+  const listLabel = app.view === "kits" ? town.tab === "local" ? "本机工具" : "工具库" : definitions[app.view]?.title || title;
+  return <header className="place-sheet-heading">
+    <div className="place-sheet-title-row">
+      <div className="place-sheet-title-main">
+        <h1 id="view-title">{title}</h1>
+        {!town.hasInstallationSource && (app.settingsRoute === "portal" || town.returnView || town.forwardView) && <NavigationControls
+          back={app.settingsRoute === "portal" || town.returnView ? app.returnFromPlace : undefined}
+          forward={town.forwardView ? app.forwardFromPlace : undefined} />}
       </div>
-      <nav className="place-switcher" aria-label="小镇功能切换" ref={nav}>
-        {places.map(([target, label]) => (
-          <button type="button" key={target} aria-current={view === target ? "page" : undefined}
-            onClick={() => navigate(target)}>{label}</button>
-        ))}
-      </nav>
-    </header>
-  );
+      <div className="place-sheet-actions">
+        <button id="back-to-chat" className="icon-button" aria-label="收起阅读面板" title="收起阅读面板" onClick={app.closePlace}><X size={17} /></button>
+      </div>
+    </div>
+    {(detail || town.hasInstallationSource) && <div className="reading-breadcrumbs">
+      {town.hasInstallationSource && <button type="button" className="reading-back" onClick={app.returnFromPlace}><ArrowLeft size={14} />返回安装来源</button>}
+      {detail && <button type="button" className="reading-back" onClick={() => town.closeDetail()}>{!town.hasInstallationSource && <ArrowLeft size={14} />}返回{listLabel}列表</button>}
+    </div>}
+  </header>;
 }

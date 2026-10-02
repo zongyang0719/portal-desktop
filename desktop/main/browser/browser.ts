@@ -77,7 +77,8 @@ export class ClientBrowser {
   }
   open(input?: string) {
     const target = input === undefined ? undefined : browserURL(input);
-    this.update({ open: true });
+    // Explicit opens reveal a parked browser; background loading events do not.
+    this.update({ open: true, activation: (this.state.activation || 0) + 1 });
     if (!target) { this.layout(); return; }
     const view = this.create();
     this.track(target);
