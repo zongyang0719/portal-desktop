@@ -43,6 +43,7 @@ export function Browser({ model: app, embedded = false }: { model: AppModel; emb
           !dragging.current &&
           !document.querySelector('[data-resizing=true], [data-sidebar-sizing=true]') &&
           !panel.current?.hidden &&
+          viewport.current.closest<HTMLElement>("[data-pane-hidden]")?.dataset.paneHidden !== "true" &&
           bounds.width > 0 && bounds.height > 0 &&
           app.startup === "ready" &&
           !app.subagentSettingsOpen &&
@@ -104,7 +105,7 @@ export function Browser({ model: app, embedded = false }: { model: AppModel; emb
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["open", "hidden", "data-open", "data-pinned", "data-sidebar-sizing"],
+      attributeFilter: ["open", "hidden", "data-open", "data-pinned", "data-sidebar-sizing", "data-pane-hidden"],
     });
     window.addEventListener("resize", layout);
     window.addEventListener("beings:panel-layout", layout);

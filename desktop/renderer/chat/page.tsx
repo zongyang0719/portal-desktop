@@ -101,28 +101,23 @@ function ChatView({
   const messageElements = useRef(new Map<string, HTMLDivElement>()),
     index = useRef<ChatIndexHandle>(null),
     scrollLock = useRef(true),
-    replyAnchor = useRef<string | null>(null),
-    anchorPadding = useRef(""),
-    streamingReplySeen = useRef<string | null>(null);
+    anchoredReplyId = useRef<string | null>(null),
+    wheelAccum = useRef(0);
   const scopeScroll = useRef<Partial<Record<HistoryScope, { top: number; locked: boolean }>>>({});
-  function clearReplyAnchor() {
-    if (!replyAnchor.current) return;
-    replyAnchor.current = null;
-    if (messages.current) {
-      const container = messages.current;
-      container.style.paddingBottom = anchorPadding.current;
-      scrollLock.current = container.scrollHeight - container.scrollTop - container.clientHeight <= 1;
-    }
+  function releaseAnchor() {
+    if (!anchoredReplyId.current) return;
+    anchoredReplyId.current = null;
+    wheelAccum.current = 0;
   }
   function sendDraft() {
-    clearReplyAnchor();
+    releaseAnchor();
     scrollLock.current = true;
     void runtime.send(state.draft);
   }
   function changeScope(scope: HistoryScope) {
     if (scope === state.historyScope || (scope === "current" && !state.currentScene.sceneId)) return;
     if (messages.current) scopeScroll.current[state.historyScope] = { top: messages.current.scrollTop, locked: scrollLock.current };
-    clearReplyAnchor();
+    releaseAnchor();
     state.historyScope = scope;
     setSelection(null);
     setHighlighted(null);
@@ -220,44 +215,47 @@ function ChatView({
   }, []);
   useLayoutEffect(() => {
     scrollLock.current = true;
-    clearReplyAnchor();
+    releaseAnchor();
   }, [state.resetScroll]);
   useLayoutEffect(() => {
     const saved = scopeScroll.current[state.historyScope];
-    clearReplyAnchor();
+    releaseAnchor();
     scrollLock.current = saved?.locked ?? true;
     if (messages.current && saved) messages.current.scrollTop = saved.top;
   }, [state.historyScope]);
   useLayoutEffect(() => {
-    if (replyAnchor.current && !visibleItems.some(
-      item => item.kind === "message" && item.id === replyAnchor.current && item.streaming,
-    )) clearReplyAnchor();
+    const container = messages.current;
+    if (!container) return;
     const streamingReply = visibleItems.find(
       (item): item is Message =>
         item.kind === "message" && item.role === "being" && item.streaming,
     );
-    const container = messages.current;
-    let shouldAnchorReply = false;
-    if (streamingReply && streamingReplySeen.current !== streamingReply.id) {
-      streamingReplySeen.current = streamingReply.id;
-      shouldAnchorReply = scrollLock.current;
+    // Release anchor when the anchored reply stops streaming.
+    if (anchoredReplyId.current && (!streamingReply || streamingReply.id !== anchoredReplyId.current)) {
+      anchoredReplyId.current = null;
+      wheelAccum.current = 0;
     }
-    if (streamingReply && shouldAnchorReply && container) {
+    // While anchored, keep the reply start pinned near the viewport top.
+    if (anchoredReplyId.current) {
+      const reply = messageElements.current.get(anchoredReplyId.current);
+      if (reply) container.scrollTop = reply.offsetTop - 20;
+      return;
+    }
+    // Follow-bottom mode: check if reply start is about to scroll out of view.
+    if (scrollLock.current && streamingReply) {
       const reply = messageElements.current.get(streamingReply.id);
       if (reply) {
-        anchorPadding.current = container.style.paddingBottom;
-        container.style.paddingBottom = `${parseFloat(getComputedStyle(container).paddingBottom) + container.clientHeight}px`;
-        replyAnchor.current = streamingReply.id;
-        scrollLock.current = false;
-        container.scrollTop +=
-          reply.getBoundingClientRect().top -
-          container.getBoundingClientRect().top -
-          20;
-        return;
+        const replyTop = reply.getBoundingClientRect().top;
+        const containerTop = container.getBoundingClientRect().top;
+        if (replyTop < containerTop + 20) {
+          anchoredReplyId.current = streamingReply.id;
+          scrollLock.current = false;
+          container.scrollTop = reply.offsetTop - 20;
+          return;
+        }
       }
     }
-    if (messages.current && scrollLock.current)
-      messages.current.scrollTop = messages.current.scrollHeight;
+    if (scrollLock.current) container.scrollTop = container.scrollHeight;
   });
   useEffect(() => {
     const readSelection = () => {
@@ -439,18 +437,20 @@ function ChatView({
           id="messages"
           ref={messages}
           onWheel={(event) => {
-            if (event.deltaY) clearReplyAnchor();
+            if (anchoredReplyId.current) {
+              wheelAccum.current += Math.abs(event.deltaY);
+              if (wheelAccum.current > 30) releaseAnchor();
+              return;
+            }
             if (event.deltaY < 0) scrollLock.current = false;
           }}
-          onTouchMove={() => {
-            clearReplyAnchor();
-          }}
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) clearReplyAnchor();
+          onTouchMove={(event) => {
+            if (anchoredReplyId.current) {
+              releaseAnchor();
+            }
           }}
           onScroll={() => {
             const el = messages.current!;
-            if (replyAnchor.current) return;
             scrollLock.current =
               el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
             setSelection(null);
@@ -685,7 +685,7 @@ function ChatView({
         container={messages}
         elements={messageElements}
         scrollLock={scrollLock}
-        clearAnchor={clearReplyAnchor}
+        clearAnchor={releaseAnchor}
         send={bridge.send}
         highlight={setHighlighted}
       />

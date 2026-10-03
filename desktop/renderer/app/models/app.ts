@@ -16,7 +16,8 @@ import { WorkspaceModel } from "./workspace";
 import { TownModel } from "../../town/models/town";
 import type { HistoryScope } from "../../chat/models/scenes";
 import { groupForView, placeGroups, type PlaceGroup } from "./navigation";
-import { defaultPlacement, PlacementStore, placementKey, type ChatPlacement, type ContentPlacement } from "../../workspace/placement";
+import { placementKey, type ChatPlacement, type ContentPlacement } from "../../workspace/placement";
+import { defaultDesktopPlacement, desktopPlacementKey, DesktopPlacementStore, NavigationFavoritesStore, type DesktopPlacement, type NavigationFavorite } from "../../workspace/desktop-placement";
 
 type SettingsRoute = "" | "connection" | "town" | "model" | "portal" | "diagnostics";
 
@@ -26,17 +27,37 @@ export class AppModel extends Store {
   themePreference: AppearancePreference = "auto";
   startup: "loading" | "ready" | "error" = "loading";
   view = "chat";
-  placement = defaultPlacement();
+  placement = defaultDesktopPlacement();
   private placementIdentity = "";
   private restoringPlacement = false;
-  private placements: PlacementStore;
+  private placements: DesktopPlacementStore;
+  private favoritesStore: NavigationFavoritesStore;
+  favorites: NavigationFavorite[] = [];
+  isFavorite = (kind: NavigationFavorite["kind"], id: string) => this.favorites.some(item => item.kind === kind && item.id === id);
+  toggleFavorite = (kind: NavigationFavorite["kind"], id: string) => {
+    if (!this.placementIdentity) return;
+    this.favorites = this.isFavorite(kind, id)
+      ? this.favorites.filter(item => item.kind !== kind || item.id !== id) : [...this.favorites, { kind, id }];
+    if (!this.favoritesStore.put(this.placementIdentity, this.favorites)) this.toast("置顶已保留；重启后可能无法恢复。");
+    this.changed();
+  };
+  setPlacement = (placement: DesktopPlacement) => {
+    this.placement = placement;
+    this.savePlacement();
+    this.changed();
+  };
   setChatPlacement = (chat: ChatPlacement) => {
     this.placement = { ...this.placement, chat };
     this.savePlacement();
     this.changed();
   };
   revealChat = () => {
-    if (this.placement.chat.mode === "edge") this.setChatPlacement({ ...this.placement.chat, mode: "docked" });
+    if (this.placement.chat.mode === "edge" || this.placement.focused === "content")
+      this.setPlacement({ ...this.placement, focused: null, chat: { ...this.placement.chat, mode: "docked" } });
+  };
+  revealContent = () => {
+    if (this.placement.contentPanel.mode === "edge" || this.placement.focused === "chat")
+      this.setPlacement({ ...this.placement, focused: null, contentPanel: { ...this.placement.contentPanel, mode: "docked" } });
   };
   private savePlacement() {
     if (!this.restoringPlacement && this.placementIdentity && !this.placements.put(this.placementIdentity, this.placement))
@@ -44,7 +65,9 @@ export class AppModel extends Store {
   }
   private placeContent(content: ContentPlacement) {
     if (this.restoringPlacement) return;
-    this.placement = { ...this.placement, content };
+    this.placement = { ...this.placement, content,
+      focused: content ? (this.placement.focused === "chat" ? null : this.placement.focused) : null,
+      contentPanel: { ...this.placement.contentPanel, mode: this.placement.contentPanel.mode === "edge" ? "docked" : this.placement.contentPanel.mode } };
     this.savePlacement();
   }
   browserVisible = false;
@@ -52,7 +75,7 @@ export class AppModel extends Store {
   private groupDestinations: Partial<Record<PlaceGroup, string>> = {};
   openPlaceGroup(group: PlaceGroup) {
     const destination = this.groupDestinations[group] || placeGroups[group].initial;
-    if (this.view === destination && !this.browserVisible) return;
+    if (this.view === destination && !this.browserVisible) { this.revealContent(); return; }
     this.navigate(destination);
   }
   async openBrowser(url?: string) {
@@ -63,7 +86,7 @@ export class AppModel extends Store {
     });
   }
   revealBrowser() {
-    if (this.browserVisible) return;
+    if (this.browserVisible) { this.revealContent(); return; }
     this.town.rememberReading();
     this.browserVisible = true;
     this.placeContent({ view: "browser" });
@@ -190,7 +213,8 @@ export class AppModel extends Store {
     super();
     let storage: Storage | undefined;
     try { storage = typeof localStorage === "undefined" ? undefined : localStorage; } catch { /* Optional storage. */ }
-    this.placements = new PlacementStore(storage);
+    this.placements = new DesktopPlacementStore(storage);
+    this.favoritesStore = new NavigationFavoritesStore(storage);
     this.town = new TownModel(
       { ...api, openBrowser: (url?: string) => this.openBrowser(url) },
       this.toast,
@@ -314,6 +338,11 @@ export class AppModel extends Store {
       this.toast(error);
     }
   };
+  openFeature = (view: string) => {
+    if (view === "browser") { if (this.browserVisible) this.revealContent(); else void this.openBrowser(); return; }
+    if (this.view === view && !this.browserVisible) { this.revealContent(); return; }
+    this.navigate(view);
+  };
   navigate = (view: string, id?: string) => {
     this.placeContent(view === "chat" ? null : { view, ...(id ? { id } : {}) });
     if (!this.town.restoringReading) {
@@ -366,11 +395,12 @@ export class AppModel extends Store {
     reload ||= Boolean(this.snapshot && next.settings.endpoint !== this.snapshot.settings.endpoint);
     this.snapshot = next;
     this.workspace.snapshot(next);
-    const identity = placementKey(next.settings.endpoint, next.settings.being, next.chatScene?.scene_id ?? "");
+    const identity = desktopPlacementKey(next.settings.endpoint, next.settings.being);
     if (identity !== this.placementIdentity) {
       this.town.activateReadingScope(identity);
       this.placementIdentity = identity;
-      this.placement = this.placements.get(identity);
+      this.placement = this.placements.get(identity, placementKey(next.settings.endpoint, next.settings.being, next.chatScene?.scene_id ?? ""));
+      this.favorites = this.favoritesStore.get(identity);
       this.restoringPlacement = true;
       try {
         const content = this.placement.content;
@@ -442,6 +472,7 @@ export class AppModel extends Store {
       return;
     }
     this.chatHistoryScope = "current";
+    this.revealChat();
     this.postCurrentSession();
     if (next.chatScene && next.chatScene.scene_id !== previousSceneId)
       this.toast(`已切到「${next.chatScene.scene_meta.scene_label}」场景`);

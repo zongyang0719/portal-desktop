@@ -12,12 +12,15 @@ import type { HistoryScope } from "../../chat/models/scenes";
 import { Dialog } from "../../shared/components/dialog";
 import { SIDEBAR_PEEK, useSidebarPeek } from "../hooks/use-sidebar-peek";
 
-export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connected, scope, scopeReady, onScope, onCopy, onSession, visible = true, onReveal, createRequest = 0, widthPreferenceKey = "portal.sceneSidebarWidth", initiallyPinned = true, footer, heading, headingContainer, triggerContainer, sidebarHeader, navigation }: {
+export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connected, scope, scopeReady, onScope, onCopy, onSession, visible = true, onReveal, createRequest = 0, widthPreferenceKey = "portal.sceneSidebarWidth", initiallyPinned = true, footer, heading, headingContainer, triggerContainer, sidebarHeader, navigation, beforeSessions, pinnedSceneIds = [], onToggleScenePin }: {
   /** Optional workspace composition slots; existing callers retain their UI. */
   initiallyPinned?: boolean;
   footer?: ReactNode;
   sidebarHeader?: ReactNode;
   navigation?: ReactNode;
+  beforeSessions?: ReactNode;
+  pinnedSceneIds?: string[];
+  onToggleScenePin?: (id: string) => void;
   heading?: ReactNode;
   /** Keep the shared scene controls while placing their heading in the conversation. */
   headingContainer?: HTMLElement | null;
@@ -125,6 +128,7 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
     setMenu(undefined); setSelection([selected.scene_id]); setRenameId(selected.scene_id); setError("");
   };
   const select = (id: string) => {
+    onReveal?.();
     if (id === (requestedScene.current?.id ?? scene?.scene_id)) return;
     const request = { id }; requestedScene.current = request;
     selectionRequest.current = selectionRequest.current.then(() => onSession("select", id)).catch(cause => {
@@ -207,11 +211,12 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
       <div className="chat-scene-control">
         {triggerContainer ? createPortal(triggerButton, triggerContainer) : triggerButton}
         <div ref={sidebar.edge} className="chat-sidebar-edge" aria-hidden="true" hidden={!visible || sidebar.pinned}
-          style={{ width: SIDEBAR_PEEK.hotzoneWidth }} />
+          style={{ width: `var(--scene-sidebar-hover-width, ${SIDEBAR_PEEK.hotzoneWidth}px)` }} />
         <aside ref={sidebar.panel} id="chat-session-panel" className={"chat-session-panel" + (sidebarHeader ? " workspace-sidebar" : "")} aria-label={sidebarHeader ? "导航与场景" : "场景列表"}
           data-pinned={sidebar.effectivePinned && visible} data-open={sidebar.shown} data-peek={sidebar.peek} data-instant={sidebar.instant}
           inert={!sidebar.shown} aria-hidden={!sidebar.shown}>
           {sidebarHeader && <div className="workspace-sidebar-header">{sidebarHeader}</div>}
+          {beforeSessions}
           <div className="chat-session-create-actions">
             {sidebarHeader && <span className="workspace-section-label">场景</span>}
             <button id="new-chat-session" className="chat-session-new" type="button" aria-label="新建场景"
@@ -283,6 +288,10 @@ export function ChatSceneIndicator({ scene, sessions = [], activity = {}, connec
           }
         }}>
         {menu.scenes.length > 1 && <div className="chat-session-menu-heading">已选择 {menu.scenes.length} 个场景</div>}
+        {onToggleScenePin && menu.scenes.length === 1 && <button role="menuitem" tabIndex={-1} type="button"
+          onClick={() => { onToggleScenePin(menu.scene.scene_id); closeMenu(); }}>
+          {pinnedSceneIds.includes(menu.scene.scene_id) ? "取消置顶" : "置顶场景"}
+        </button>}
         {menu.scenes.length === 1 && <><button role="menuitem" tabIndex={-1} type="button" onClick={() => rename(menu.scene)}>重命名 <kbd aria-hidden="true">F2</kbd></button>
         <button role="menuitem" tabIndex={-1} type="button" onClick={() => {
           focusSession(menu.scene.scene_id); setDetails(menu.scene); setMenu(undefined);

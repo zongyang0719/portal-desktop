@@ -293,7 +293,7 @@ describe("React desktop state lifecycle", () => {
 
     await app.changeChatSession("select", discussion.scene_id);
     expect(app.toastMessage).toBe("已切到「方案讨论」场景");
-    expect(app.view).toBe("chat"); // A scene with no placement starts from the shared factory default.
+    expect(app.view).toBe("bonfire"); // Switching conversation scenes preserves the open feature panel.
 
     app.toastMessage = "";
     await app.changeChatSession("rename", "技术方案", discussion.scene_id);

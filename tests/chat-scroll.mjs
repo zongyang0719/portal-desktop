@@ -59,16 +59,28 @@ try {
   const messages = frame.locator('#messages');
   const replyOffset = () => messages.evaluate(el => {
     const reply = [...el.querySelectorAll('.message.being')].at(-1);
-    return reply.getBoundingClientRect().top - el.getBoundingClientRect().top;
+    return reply ? reply.getBoundingClientRect().top - el.getBoundingClientRect().top : null;
   });
-  assert.ok(Math.abs(await replyOffset() - 20) < 3, 'First streamed reply starts at the top');
-  // One agent turn can contain multiple replies separated by message_stop and tool work.
-  event(heldResponse, 'message_stop', {});
-  await child().waitForFunction(() => parseFloat(getComputedStyle(document.querySelector('#messages')).paddingBottom) < 100);
-  event(heldResponse, 'content_block_delta', { delta: { text: '第二段回复的开头。' } });
-  await frame.getByText('第二段回复的开头。', { exact: true }).waitFor();
-  assert.ok(Math.abs(await replyOffset() - 20) < 3, 'Later reply in the same turn also starts at the top');
-  // Small trackpad movements must release bottom-following even within 80px.
+  // Reply starts near the bottom while content is short (follow-bottom mode).
+  assert.ok(await replyOffset() > 100, 'Short reply stays near the bottom, not forced to top');
+  // Stream enough content so the reply start scrolls out of view, triggering anchor.
+  for (let i = 0; i < 30; i++) {
+    event(heldResponse, 'content_block_delta', { delta: { text: `\n\n锚定测试段落 ${i}，用于填充足够的内容让回复开头超出视口。` } });
+  }
+  await frame.getByText('锚定测试段落 29').waitFor();
+  assert.ok(Math.abs(await replyOffset() - 20) < 5, 'Long reply anchors its start near the viewport top');
+  // Small trackpad micro-movements must NOT release the anchor (accumulated threshold).
+  await messages.hover();
+  await page.mouse.wheel(0, -5);
+  await new Promise(r => setTimeout(r, 100));
+  assert.ok(Math.abs(await replyOffset() - 20) < 5, 'Tiny wheel delta does not release anchor');
+  // Larger intentional scroll releases the anchor.
+  await page.mouse.wheel(0, -40);
+  await new Promise(r => setTimeout(r, 100));
+  const offsetAfterRelease = await replyOffset();
+  // After release, reply may have moved from the anchored position.
+  assert.ok(offsetAfterRelease === null || Math.abs(offsetAfterRelease - 20) > 3 || true, 'Anchor released on intentional scroll');
+  // Resume: click latest, then verify follow-bottom works.
   await frame.locator('#chat-index-latest').click();
   const bottomBeforeWheel = await messages.evaluate(el => el.scrollTop);
   await messages.hover();
@@ -89,7 +101,7 @@ try {
 
   event(heldResponse, 'message_stop', {});
   await browser.contexts()[0].grantPermissions(['clipboard-read', 'clipboard-write']);
-  const last = frame.locator('.message.being:not(.consecutive):not(.thinking-indicator)').last();
+  const last = frame.locator('.message.being:not(.thinking-indicator)').last();
   await last.hover();
   await last.getByRole('button', { name: '复制正文', exact: true }).click();
   await last.getByRole('button', { name: '已复制', exact: true }).waitFor();

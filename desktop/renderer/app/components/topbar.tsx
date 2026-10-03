@@ -5,6 +5,7 @@ import { ChatSceneIndicator } from "./chat-scene";
 import { UpdateProgress } from "./update-progress";
 import { Search } from "lucide-react";
 import { WorkspaceFooter } from "./workspace-navigation";
+import { WorkspaceNavigation } from "./desktop-rail";
 export function Topbar({ model, headingContainer, triggerContainer }: { model: AppModel; headingContainer?: HTMLElement | null; triggerContainer?: HTMLElement | null }) {
   const app = useModel(model), hasToken = Boolean(app.snapshot?.settings.hasToken);
   return <header className="topbar workspace-topbar">
@@ -13,7 +14,10 @@ export function Topbar({ model, headingContainer, triggerContainer }: { model: A
         footer={<WorkspaceFooter model={app} />}
         headingContainer={headingContainer}
         triggerContainer={triggerContainer}
-        initiallyPinned={false}
+        initiallyPinned={true}
+        beforeSessions={<WorkspaceNavigation model={app} />}
+        pinnedSceneIds={app.favorites.filter(item => item.kind === "scene").map(item => item.id)}
+        onToggleScenePin={id => app.toggleFavorite("scene", id)}
         createRequest={app.chatSessionCreateRequest}
         visible={app.view === "chat" || app.placePresentation === "panel"}
         onReveal={app.revealChat}
@@ -30,12 +34,11 @@ export function Topbar({ model, headingContainer, triggerContainer }: { model: A
           app.toast("场景 ID 已复制");
         })}
       />
-    <button type="button" className="workspace-search" aria-label="查找对话" title="查找对话" disabled={!hasToken}
-      onClick={() => app.openSearch()}><Search size={17} aria-hidden="true" /></button>
   </header>;
 }
 function BeingMenu({ model }: { model: AppModel }) {
   const app = useModel(model);
+  const town = useModel(app.town);
   const [expanded, setExpanded] = useState(false),
     [visible, setVisible] = useState(false),
     [help, setHelp] = useState(false);
@@ -167,7 +170,7 @@ function BeingMenu({ model }: { model: AppModel }) {
     ? "外部运行"
     : portalLabels[portalPhase];
   const portalName = app.snapshot?.settings.portalName?.trim() || "Heart Portal";
-  const beingName = app.snapshot?.settings.being || "Being";
+  const beingName = town.displayName || app.snapshot?.settings.being || "Being";
   const portalNeedsAttention = portalPhase === "error" || Boolean(portal?.conflict);
   const checkingUpdate = app.updateChecking || app.update?.phase === "checking";
   const updateActivity = app.update?.activity;
@@ -376,6 +379,8 @@ function BeingMenu({ model }: { model: AppModel }) {
             </div>
           </div>
         </details>
+        <button type="button" className="workspace-search" aria-label="查找对话" title="查找对话" disabled={!hasToken}
+          onClick={() => app.openSearch()}><Search size={17} aria-hidden="true" /></button>
     </div>
   );
 }

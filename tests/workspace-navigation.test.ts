@@ -57,6 +57,11 @@ it("parks and reopens the browser in the right pane without refreshing the parke
   await app.openBrowser("https://example.com");
   expect(app.browserVisible).toBe(true);
   expect(app.view).toBe("mail");
+  const opens = vi.mocked(api.openBrowser).mock.calls.length;
+  app.setPlacement({ ...app.placement, contentPanel: { ...app.placement.contentPanel, mode: "edge" } });
+  app.openFeature("browser");
+  expect(app.placement.contentPanel.mode).toBe("docked");
+  expect(api.openBrowser).toHaveBeenCalledTimes(opens);
   app.town.readScroll = () => ({}); // The reading component is unmounted while browsing.
   app.hideBrowser();
   expect(app.browserVisible).toBe(false);
@@ -69,7 +74,7 @@ it("parks and reopens the browser in the right pane without refreshing the parke
   expect(app.view).toBe("mail");
 });
 
-it("restores only the manually placed panels for each scene without changing system settings or reloading chat", async () => {
+it("changes only the conversation when selecting or renaming a scene; reading and layout belong to the window", async () => {
   const { app, api } = fixture();
   const original = structuredClone(app.snapshot!);
   const source = app.chatSource;
@@ -77,29 +82,56 @@ it("restores only the manually placed panels for each scene without changing sys
   app.town.search = "Alice";
   app.town.readScroll = () => ({ "#town-body": 244 });
   app.setChatPlacement({ ...app.placement.chat, width: 510, side: "left", mode: "edge" });
+  const layout = structuredClone(app.placement);
+  const reads = vi.mocked(api.town).mock.calls.length;
   const next = { ...original, chatScene: { scene_id: "another", scene_meta: { scene_label: "阅读", client: "fixture" } } };
   app.applySnapshot(next);
-  expect(app.view).toBe("chat");
-  expect(app.placement).toMatchObject({ content: null, chat: { side: "right", mode: "docked", width: 420 } });
-  app.navigate("mail"); await settle();
-  expect(app.town.search).toBe("");
+  expect(app.view).toBe("mail");
+  expect(app.placement).toEqual(layout);
+  expect(app.town.search).toBe("Alice");
+  expect(app.town.readScroll()).toEqual({ "#town-body": 244 });
+  expect(api.town).toHaveBeenCalledTimes(reads);
   app.navigate("bonfire"); await settle();
   app.setChatPlacement({ ...app.placement.chat, mode: "floating" });
   app.applySnapshot(original);
-  expect(app.view).toBe("mail");
-  expect(app.placement.chat).toMatchObject({ mode: "edge", side: "left", width: 510 });
-  expect(app.town.search).toBe("Alice");
-  expect(app.town.pendingScroll).toEqual({ "#town-body": 244 });
+  expect(app.view).toBe("bonfire");
+  expect(app.placement.chat).toMatchObject({ mode: "floating", side: "left", width: 510 });
   expect(app.snapshot?.settings).toEqual(original.settings);
   expect(app.chatSource).toBe(source);
-  const reads = vi.mocked(api.town).mock.calls.length;
-  app.applySnapshot({ ...original, chatScene: { ...original.chatScene!, scene_meta: { ...original.chatScene!.scene_meta, scene_label: "换个名字" } } });
+  app.openFeature("mail");
+  expect(app.town.search).toBe("Alice");
+  expect(app.town.pendingScroll).toEqual({ "#town-body": 244 });
+  const renamed = { ...original, chatScene: { ...original.chatScene!, scene_meta: { ...original.chatScene!.scene_meta, scene_label: "换个名字" } } };
+  app.applySnapshot(renamed);
   expect(app.view).toBe("mail");
-  expect(app.placement.chat.mode).toBe("edge");
-  expect(api.town).toHaveBeenCalledTimes(reads);
-  app.applySnapshot(next);
-  expect(app.view).toBe("bonfire");
   expect(app.placement.chat.mode).toBe("floating");
+});
+
+it("reveals a collapsed or hidden feature without refetching its current reading state", async () => {
+  const { app, api } = fixture();
+  app.openFeature("mail"); await settle();
+  app.town.search = "Alice";
+  const reads = vi.mocked(api.town).mock.calls.length;
+  app.setPlacement({ ...app.placement, focused: "chat", contentPanel: { ...app.placement.contentPanel, mode: "edge" } });
+  app.openFeature("mail");
+  expect(app.placement.focused).toBeNull();
+  expect(app.placement.contentPanel.mode).toBe("docked");
+  expect(app.town.search).toBe("Alice");
+  expect(api.town).toHaveBeenCalledTimes(reads);
+});
+
+it("keeps favorites across scene switches and isolates them across connections", () => {
+  const { app } = fixture();
+  const original = structuredClone(app.snapshot!);
+  app.toggleFavorite("view", "mail"); app.toggleFavorite("scene", original.chatScene!.scene_id);
+  const favorites = structuredClone(app.favorites);
+  app.applySnapshot({ ...original, chatScene: { scene_id: "another", scene_meta: { scene_label: "新场景", client: "fixture" } } });
+  expect(app.favorites).toEqual(favorites);
+  app.applySnapshot({ ...original, settings: { ...original.settings, endpoint: "https://another.test" } });
+  expect(app.favorites).toEqual([]);
+  expect(app.placement.content).toBeNull();
+  app.applySnapshot(original);
+  expect(app.favorites).toEqual(favorites);
 });
 
 it("keeps a saved reading panel alongside an explicit quote when chat was collapsed", async () => {

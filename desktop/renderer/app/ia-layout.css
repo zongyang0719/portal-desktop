@@ -8,9 +8,9 @@
 .desktop-rail button:is(:hover,:focus-visible) .desktop-rail-label{display:block}
 .desktop-rail .destination-unread{position:absolute;right:5px;top:5px}
 .desktop-scene-trigger #chat-scene-indicator{position:static;margin:0;width:38px;height:38px}
-.desktop-ia .workspace-stage>.topbar{height:52px;flex:0 0 52px;margin-left:0;padding-left:16px;background:transparent}
-.desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true])>.topbar{margin-left:var(--scene-sidebar-width)}
-.desktop-panel-shell{display:flex;flex:1;min-width:0;min-height:0;margin:0 10px 10px 0;border:1px solid var(--reading-border);border-radius:var(--reading-radius);overflow:hidden;background:var(--content-material)}
+.desktop-ia .workspace-stage>.topbar{height:52px;min-height:52px;flex:0 0 52px;margin:0 0 0 var(--scene-sidebar-controls-end);padding:0;background:transparent;gap:0;overflow:visible;-webkit-app-region:drag}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true])>.topbar{margin-left:var(--scene-sidebar-width);padding:0}
+.desktop-panel-shell{display:flex;flex:1;min-width:0;min-height:0;margin:10px 10px 10px 0;border:1px solid var(--reading-border);border-radius:var(--reading-radius);overflow:hidden;background:var(--content-material)}
 .desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true])>.desktop-panel-shell{margin-left:var(--scene-sidebar-width)}
 .desktop-ia .workspace-sidebar{padding:54px 10px 12px}
 .desktop-ia .workspace-sidebar .chat-session-list{flex:1;max-height:none}
@@ -24,6 +24,48 @@
 .desktop-ia .placement-chat-title .chat-scene-label{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .desktop-ia .placement-chat-title .chat-scene-info{flex-shrink:0;opacity:1}
 .desktop-ia .placement-chat-title .chat-scene-history{display:none}
-html[data-platform=darwin] .desktop-ia .workspace-stage>.topbar{padding-left:60px}
-html[data-platform=win32] .desktop-ia .workspace-stage>.topbar{padding-right:148px}
+html[data-platform=darwin] .desktop-ia .workspace-stage>.topbar{padding-left:0}
+html[data-platform=win32] .desktop-ia .workspace-stage>.topbar{padding-right:0}
 @media(max-height:640px){.desktop-rail{padding-top:46px}.desktop-rail button,.desktop-scene-trigger{height:32px;margin:2px 0}}
+
+/* One sidebar: grouped destinations when open, an icon rail when folded. */
+/* The folded destination rail replaces the PR's bare 8px window edge. */
+.desktop-ia .workspace-stage{--scene-trigger-left:16px;--scene-sidebar-hover-width:52px}
+html[data-platform=darwin] .desktop-ia .workspace-stage{--scene-trigger-left:88px}
+.desktop-ia .desktop-rail{position:absolute;inset:0 auto 0 0;width:var(--scene-sidebar-controls-end);align-items:flex-start;padding:52px 0 12px 6px;z-index:85;pointer-events:none}
+.desktop-ia .desktop-rail-links{width:38px}
+.desktop-ia .desktop-rail :is(.desktop-rail-links,button){pointer-events:auto}
+.desktop-ia .desktop-scene-trigger{position:absolute;top:8px;left:var(--scene-trigger-left);pointer-events:auto}
+.desktop-ia .desktop-panel-shell{margin-left:52px}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-pinned=true])>.desktop-panel-shell{margin-left:var(--scene-sidebar-width)}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-open=true])>.desktop-rail{width:var(--scene-sidebar-width);padding:0;pointer-events:none}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-open=true])>.desktop-rail>.desktop-rail-links,
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-open=true])>.desktop-rail>button{display:none}
+.desktop-ia .workspace-sidebar{gap:8px;padding:54px 10px 12px}
+.desktop-ia .workspace-sidebar-header{padding-right:2px}
+.workspace-navigation{display:flex;flex-direction:column;gap:12px;min-height:0;flex:0 1 auto;max-height:56%;overflow-y:auto;scrollbar-width:thin;padding:4px 2px 9px;border-bottom:1px solid var(--line)}
+.workspace-nav-section>summary{cursor:pointer;padding:0 6px 6px;list-style:none;display:flex;align-items:center;gap:6px}
+.workspace-nav-section>summary::after{content:'›';margin-left:auto;transform:rotate(90deg);font-size:14px}
+.workspace-nav-section:not([open])>summary::after{transform:none}
+.workspace-nav-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 4px}
+.workspace-nav-row{position:relative;display:flex;align-items:center;min-width:0;border-radius:6px}
+.workspace-nav-row:has([aria-current]){background:var(--selected)}
+.workspace-nav-link{display:flex;gap:7px;align-items:center;min-width:0;min-height:31px;flex:1;padding:5px 6px;text-align:left;font-size:12px;line-height:20px;color:var(--secondary);border-radius:6px}
+.workspace-nav-link[aria-current]{color:var(--text);font-weight:550}
+.workspace-nav-link>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-nav-link .destination-unread{position:absolute;left:18px;top:5px;width:5px;height:5px}
+.workspace-favorites>.workspace-section-label{padding:0 6px 6px}
+.workspace-favorites .workspace-nav-link{font-size:13px}
+.desktop-ia .workspace-sidebar .chat-session-list{flex:1 1 100px;min-height:60px}
+.desktop-ia .workspace-sidebar .chat-session-create-actions{flex-shrink:0}
+.desktop-ia .workspace-sidebar .chat-session-footer{flex-shrink:0}
+.desktop-ia .workspace-being .workspace-search{flex:0 0 30px;grid-column:auto;justify-self:auto}
+.desktop-ia .workspace-being .workspace-search:hover{background:var(--hover);color:var(--text)}
+.desktop-ia .workspace-stage:has(.chat-session-panel[data-open=false]) .desktop-pane[data-leading=true][data-floating=false]>.desktop-pane-header{padding-left:max(10px,calc(var(--scene-trigger-left) + 48px - 52px))}
+@media(max-height:650px){.workspace-navigation{max-height:48%}.workspace-nav-link{min-height:28px}}
+@media(prefers-reduced-motion:reduce){.desktop-panel-shell{transition:none}}
+
+.desktop-ia .workspace-sidebar-header{min-height:36px;margin-bottom:2px}
+.desktop-ia .workspace-navigation{margin-top:0}
+.desktop-ia .chat-session-panel[data-pinned=true]{background:var(--sidebar-material);backdrop-filter:blur(24px)}
+.desktop-ia .chat-session-panel[data-peek=true]{background:var(--sidebar-material);backdrop-filter:blur(24px)}
